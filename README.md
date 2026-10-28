@@ -110,6 +110,14 @@ algunos navegadores bloquean peticiones externas desde `file://`.
   `docs/esquema-supabase.md`.
 - Para repetir la prueba del esquema: `tests/schema/` (ver su README).
 
+## Pruebas
+```
+cd tests
+npm install
+npm test
+```
+Más detalle en `tests/README.md`.
+
 ## Estado
 - Versión: 2.6 (primer guardado en la nube, en prueba)
 - Almacenamiento: localStorage (copia principal) + copia en Supabase al guardar

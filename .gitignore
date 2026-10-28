@@ -39,3 +39,16 @@ src/supabaseClient.js
 .idea/
 *.swp
 *.swo
+
+# Excepciones (deben ir después de las reglas anteriores)
+!package-lock.json
+!manifest.json
+# Imágenes de referencia en docs/ (solo maquetas, sin datos reales)
+!docs/*.png
+!docs/*.jpg
+!docs/*.jpeg
+!docs/*.webp
+!docs/*.pdf
+
+# Dependencias
+node_modules/
