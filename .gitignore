@@ -1,0 +1,36 @@
+# Archivos sensibles / respaldos
+*.json
+!package.json
+*.bak
+*.backup
+*.zip
+*.sql
+
+# Fotos / archivos subidos
+*.jpg
+*.jpeg
+*.png
+*.webp
+*.heic
+*.pdf
+*.doc
+*.docx
+*.xls
+*.xlsx
+
+# Logs / temporales
+*.log
+.DS_Store
+Thumbs.db
+
+# Variables / claves
+.env
+.env.*
+service-account*.json
+supabase-key*.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
