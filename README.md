@@ -25,6 +25,14 @@ App web vanilla (HTML/CSS/JS) para control de auditorías e inspecciones en supe
 ## Uso local
 Abrir `src/index.html` en un navegador moderno. No requiere servidor para la versión actual.
 
+## Pruebas
+```
+cd tests
+npm install
+npm test
+```
+Más detalle en `tests/README.md`.
+
 ## Estado
 - Versión: 2.0 (base)
 - Almacenamiento: localStorage (solo navegador)
