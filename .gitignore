@@ -29,6 +29,9 @@ Thumbs.db
 service-account*.json
 supabase-key*.json
 
+# Supabase config
+src/supabaseClient.js
+
 # IDE
 .vscode/
 .idea/
