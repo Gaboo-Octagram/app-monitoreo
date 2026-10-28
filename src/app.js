@@ -6,108 +6,75 @@
    HTML + CSS + JS puro. Los datos se guardan en LocalStorage.
    ===================================================================== */
 
-/* ---------- Utilidades ---------- */
-const $ = (s, r = document) => r.querySelector(s);
-const $$ = (s, r = document) => [...r.querySelectorAll(s)];
-const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const uid = () => Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-4);
-const pad = n => String(n).padStart(2, '0');
-const isoDate = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-const parseISO = s => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
-const todayISO = () => isoDate(new Date());
-const fmtDate = s => { const [y, m, d] = s.split('-'); return `${d}-${m}-${y}`; };
-const fmtDateSlash = s => fmtDate(s).replace(/-/g, '/');
-const norm = s => String(s ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-const MONTHS = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
-const DAYS_LONG = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
-const longDate = d => `${DAYS_LONG[d.getDay()]} ${d.getDate()} de ${MONTHS[d.getMonth()]} de ${d.getFullYear()}`;
-const fmtTime = iso => new Date(iso).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', hour12: false });
-const fmtSize = b => b < 1024 ? b + ' B' : b < 1048576 ? (b / 1024).toFixed(0) + ' KB' : (b / 1048576).toFixed(1) + ' MB';
-const plural = (n, s, p) => n === 1 ? s : p;
-const pctText = p => p === null || p === undefined ? '--%' : p + '%';
-const avg = arr => arr.length ? Math.round(arr.reduce((s, x) => s + x, 0) / arr.length) : null;
-
-const CAT_LABEL = { trabajadores: 'Trabajadores', limpieza: 'Limpieza', orden: 'Orden' };
-const KEY = 'sc_data_v2', OLD_KEY = 'sc_data_v1', DRAFT_KEY = 'sc_drafts_v2', FILES_KEY = 'sc_files_v1';
-const MAX_PHOTOS = 3;
-const STATUS_LABEL = { pending: 'Pendiente', review: 'En revisión', done: 'Completado' };
-const COLORS = ['#f0b429', '#a779f5', '#2fd4a4', '#4c8dff', '#f0646d', '#38bdf8', '#fb923c'];
-const ICONS = [
-  '<path d="M7 3v8M5 3v5a2 2 0 0 0 4 0V3M7 11v10M17 3c-2 1-3 4-3 7h3v11"/>',
-  '<path d="M4 9l1-5h14l1 5M4 9v11h16V9M4 9a3 3 0 0 0 5.3 1.9 3 3 0 0 0 5.4 0A3 3 0 0 0 20 9M10 20v-5h4v5"/>',
-  '<path d="M6 7h12l1 13H5L6 7zM9 7a3 3 0 0 1 6 0"/>',
-  '<path d="M3 9l9-6 9 6v11H3V9zM9 20v-6h6v6"/>',
-  '<path d="M21 8l-9-5-9 5v8l9 5 9-5V8zM3 8l9 5 9-5M12 13v8"/>'
-];
+/* ---------- Utilidades y constantes ----------
+   Viven en src/lib/util.js y src/lib/constants.js (se cargan antes). */
 const svg = (inner, s = 16) => `<svg viewBox="0 0 24 24" width="${s}" height="${s}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${inner}</svg>`;
 const CAMERA = svg('<path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>');
 const WARN = svg('<path d="M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/>', 14);
 const CAL = svg('<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>');
 
-/* ---------- Almacenamiento ---------- */
-function load(key, fallback) {
-  try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) : fallback; }
-  catch (e) { return fallback; }
-}
-function store(key, val) {
-  try { localStorage.setItem(key, JSON.stringify(val)); return true; }
-  catch (e) { toast('No se pudo guardar: almacenamiento lleno o bloqueado por el navegador.', 'error'); return false; }
+/* ---------- Almacenamiento (a través de la capa de datos) ---------- */
+/* Las claves ya viven en src/data/local-storage-provider.js.
+   Acá solo se usan las operaciones de alto nivel de AppData. */
+
+/* ---------- Modelo de datos ----------
+   seed(), normalizeDB(), migrateV1() y los valores por defecto viven en
+   src/data/model.js. Acá solo se usan. */
+
+/* ---------- Estado de datos ----------
+   db, drafts y files se llenan en hydrate() antes del primer render. */
+let db = seed();
+let drafts = {};
+let files = [];
+
+async function hydrate() {
+  const v2 = await AppData.loadDB();
+  if (v2) {
+    db = normalizeDB(v2);
+  } else {
+    const v1 = await AppData.loadLegacyDB();
+    db = v1 ? normalizeDB(migrateV1(v1)) : seed();
+    await save();
+  }
+  drafts = (await AppData.loadDrafts()) || {};
+  files = (await AppData.loadFiles()) || [];
 }
 
-/* ---------- Datos iniciales ---------- */
-const DEFAULT_PARAMS = ['Lavado de manos', 'Uso de mascarilla', 'Uso de cofia', 'Sin joyas', 'Uniforme', 'Sin heridas'];
-const DEFAULT_LIMPIEZA = ['Pisos limpios y sin residuos', 'Mesones y superficies sanitizadas', 'Equipos y utensilios limpios', 'Basureros vaciados y tapados', 'Sin señales de plagas'];
-const DEFAULT_ORDEN = ['Productos ordenados y rotulados', 'Pasillos y salidas despejados', 'Herramientas en su lugar', 'Productos sin contacto con el piso', 'Rotación de productos (FIFO) respetada'];
-const DEFAULT_AREAS = ['Panadería', 'Pastelería', 'Carnicería', 'Rostisería', 'Frutería y Verdulería', 'Sala de Ventas', 'Bodega'];
-const mkItems = list => list.map(text => ({ id: uid(), text }));
-const mkBlock = (type, sub, texts) => ({ id: uid(), type, sub: sub || '', items: mkItems(texts) });
-const defaultBlocks = () => [mkBlock('limpieza', '', DEFAULT_LIMPIEZA), mkBlock('orden', '', DEFAULT_ORDEN)];
-const blockLabel = b => `Check ${b.type === 'orden' ? 'Orden' : 'Limpieza'}${b.sub ? ` (${b.sub})` : ''}`;
-
-function seed() {
-  return {
-    version: 2, settings: { evaluator: '', store: '', goal: 90 },
-    params: mkItems(DEFAULT_PARAMS), bosses: [], workers: [],
-    areas: DEFAULT_AREAS.map(name => ({ id: uid(), name, bossId: '', workerIds: [], blocks: defaultBlocks() })),
-    audits: []
-  };
-}
-function normalizeDB(d) {
-  d = d && typeof d === 'object' ? d : seed();
-  d.settings = Object.assign({ evaluator: '', store: '', goal: 90 }, d.settings || {});
-  if (!Array.isArray(d.params)) d.params = mkItems(DEFAULT_PARAMS);
-  ['bosses', 'workers', 'areas', 'audits'].forEach(k => { if (!Array.isArray(d[k])) d[k] = []; });
-  d.areas.forEach(a => { a.workerIds = a.workerIds || []; a.blocks = Array.isArray(a.blocks) ? a.blocks : []; a.blocks.forEach(b => { b.items = b.items || []; b.sub = b.sub || ''; }); });
-  d.audits.forEach(a => { a.areas = Array.isArray(a.areas) ? a.areas : []; });
-  return d;
-}
-/* Migra datos de la versión anterior: se conservan áreas, trabajadores, jefes y ajustes. */
-function migrateV1(o) {
-  const d = { version: 2, settings: { evaluator: (o.settings || {}).evaluator || '', store: (o.settings || {}).store || '', goal: (o.settings || {}).goal || 90 },
-    params: [], bosses: (o.bosses || []).filter(b => !b.sample), workers: (o.workers || []).filter(w => !w.sample), areas: [], audits: [] };
-  (o.areas || []).forEach(a => {
-    const it = a.items || {};
-    const blk = (type, list) => ({ id: uid(), type, sub: '', items: (list || []).map(i => ({ id: i.id || uid(), text: i.text })) });
-    d.areas.push({ id: a.id, name: a.name, bossId: d.bosses.some(b => b.id === a.bossId) ? a.bossId : '',
-      workerIds: (a.workerIds || []).filter(id => d.workers.some(w => w.id === id)), blocks: [blk('limpieza', it.limpieza), blk('orden', it.orden)] });
-  });
-  const withP = (o.areas || []).find(a => a.items && a.items.personal && a.items.personal.length);
-  d.params = withP ? withP.items.personal.map(i => ({ id: i.id || uid(), text: i.text })) : mkItems(DEFAULT_PARAMS);
-  return d;
-}
-function loadDB() {
-  const v2 = load(KEY, null); if (v2) return normalizeDB(v2);
-  const v1 = load(OLD_KEY, null); if (v1) return normalizeDB(migrateV1(v1));
-  return seed();
+let savedTimer = null;
+/* Aviso discreto de "Guardado" en la barra superior. */
+function flashSaved() {
+  const el = $('#saveState');
+  if (!el) return;
+  el.hidden = false;
+  clearTimeout(savedTimer);
+  savedTimer = setTimeout(() => { el.hidden = true; }, 1500);
 }
 
-let db = loadDB();
-let drafts = load(DRAFT_KEY, {});
-let files = load(FILES_KEY, []);
-const save = () => store(KEY, db);
-const saveDrafts = () => store(DRAFT_KEY, drafts);
-let draftTimer = null;
-const saveDraftsSoon = () => { clearTimeout(draftTimer); draftTimer = setTimeout(saveDrafts, 350); };
+async function save() {
+  try { await AppData.saveDB(db); flashSaved(); return true; }
+  catch (e) { toast(e.message || 'No se pudo guardar.', 'error'); return false; }
+}
+
+/* Los borradores no se escriben en cada clic: con fotos, cada escritura
+   puede pesar varios MB. Se agrupan y se escriben a los 400 ms. */
+let draftsDirty = false;
+
+async function saveDrafts() {
+  try { await AppData.saveDrafts(drafts); draftsDirty = false; flashSaved(); return true; }
+  catch (e) { toast(e.message || 'No se pudo guardar el borrador.', 'error'); return false; }
+}
+
+const saveDraftsSoon = debounce(() => { if (draftsDirty) saveDrafts(); }, 400);
+const markDrafts = () => { draftsDirty = true; saveDraftsSoon(); };
+
+/* Escribe ya lo pendiente: al guardar la auditoría, cambiar de pantalla
+   o cerrar la pestaña. */
+async function flushDrafts() {
+  if (!draftsDirty) return;
+  saveDraftsSoon.cancel();
+  await saveDrafts();
+}
+
 const dEnsure = id => { const d = drafts[id] = drafts[id] || {}; d.checks = d.checks || {}; d.workers = d.workers || {}; return d; };
 
 /* ---------- Estado de la interfaz ---------- */
@@ -164,13 +131,21 @@ function openLightbox(src) {
 }
 
 let modalDismiss = null;
+let modalPrevFocus = null;
+
 function closeModal() {
   $('#modalRoot').innerHTML = '';
   const f = modalDismiss; modalDismiss = null;
   if (f) f();
+  if (modalPrevFocus) {
+    const el = modalPrevFocus;
+    modalPrevFocus = null;
+    try { el.focus({ preventScroll: true }); } catch (e) { /* el elemento ya no existe */ }
+  }
 }
 function modal({ title, titleHTML, body, buttons = [], size = '', wide = false, onOpen, onDismiss }) {
   const root = $('#modalRoot');
+  modalPrevFocus = document.activeElement;
   root.innerHTML = `<div class="overlay"><div class="modal ${wide ? 'wide' : size}" role="dialog" aria-modal="true" aria-label="${esc(title)}">
     <div class="modal-head"><h3>${titleHTML || esc(title)}</h3><button class="icon-btn" data-m="close" aria-label="Cerrar">×</button></div>
     <div class="modal-body">${body}</div><div class="modal-foot"></div></div></div>`;
@@ -190,9 +165,23 @@ function modal({ title, titleHTML, body, buttons = [], size = '', wide = false, 
   if (onOpen) onOpen(m);
 }
 document.addEventListener('keydown', e => {
-  if (e.key !== 'Escape') return;
-  const lb = $('.lightbox'); if (lb) return lb.remove();
-  if ($('.overlay')) closeModal();
+  const lightbox = $('.lightbox');
+  if (e.key === 'Escape') {
+    if (lightbox) { lightbox.remove(); return; }
+    if ($('.overlay')) closeModal();
+    return;
+  }
+  /* Tab no se escapa del diálogo abierto. */
+  if (e.key !== 'Tab' || lightbox) return;
+  const box = $('.modal');
+  if (!box) return;
+  const focusables = $$('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])', box)
+    .filter(el => el.offsetParent !== null);
+  if (!focusables.length) return;
+  const first = focusables[0], last = focusables[focusables.length - 1];
+  const outside = !box.contains(document.activeElement);
+  if (e.shiftKey && (document.activeElement === first || outside)) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && (document.activeElement === last || outside)) { e.preventDefault(); first.focus(); }
 });
 
 const confirmBox = (msg, ok = 'Confirmar', danger = false, title = 'Confirmar') => new Promise(res => {
@@ -233,28 +222,8 @@ function formModal({ title, fields, values = {}, submitLabel = 'Guardar', onSubm
   });
 }
 
-/* ---------- Fotos ---------- */
-function compressImage(file) {
-  return new Promise((res, rej) => {
-    const rd = new FileReader();
-    rd.onerror = () => rej(new Error('lectura'));
-    rd.onload = () => {
-      const img = new Image();
-      img.onerror = () => rej(new Error('imagen'));
-      img.onload = () => {
-        const sc = Math.min(1, 900 / Math.max(img.width, img.height));
-        const c = document.createElement('canvas');
-        c.width = Math.max(1, Math.round(img.width * sc)); c.height = Math.max(1, Math.round(img.height * sc));
-        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
-        res(c.toDataURL('image/jpeg', 0.7));
-      };
-      img.src = rd.result;
-    };
-    rd.readAsDataURL(file);
-  });
-}
-const thumbsHTML = (photos, rm) => (photos || []).map((p, i) =>
-  `<span class="thumb-wrap"><img class="thumb" src="${esc(p)}" alt="Foto ${i + 1}" data-action="zoom"><button type="button" class="thumb-x" ${rm(i)} aria-label="Quitar foto">×</button></span>`).join('');
+/* ---------- Fotos ----------
+   compressImage() y thumbsHTML() viven en src/lib/photos.js. */
 
 /* =====================================================================
    VISTA: INICIO
@@ -355,13 +324,13 @@ function workerModal(areaId, wid) {
   modal({
     title: `Higiene · ${w.name}`, titleHTML: `Higiene · <span>${esc(w.name)}</span>`, size: 'mid', body: body(),
     buttons: [{ label: 'Cancelar' }, {
-      label: 'Guardar Check', cls: 'primary', onClick: () => {
+      label: 'Guardar Check', cls: 'primary', onClick: async () => {
         const miss = db.params.find(p => !st[p.id]);
         if (miss) { bad = miss.id; draw(); toast('Marca todos los parámetros (usa N/A si no aplica).', 'error'); return false; }
         const noObs = db.params.find(p => st[p.id].s === 'nok' && !st[p.id].o.trim() && !st[p.id].p.length);
         if (noObs) { bad = noObs.id; draw(); toast('Agrega una observación o una foto en lo que no cumple.', 'error'); return false; }
         dEnsure(areaId).workers[wid] = { st: 'done', items: st };
-        saveDrafts(); redrawArea(areaId);
+        await saveDrafts(); redrawArea(areaId);
       }
     }],
     onOpen: m => {
@@ -427,6 +396,30 @@ function mergeResult(old, nw) {
   return merged;
 }
 
+/* Sube la auditoría a la nube después de guardarla aquí. Si algo falla,
+   la copia del navegador ya está a salvo: solo se avisa. */
+async function syncToCloud(aud) {
+  if (!window.SupabaseWrite) return { skipped: 'sin-cliente' };
+  try {
+    const r = await SupabaseWrite.saveAudit(aud, db);
+    if (r && r.ok) {
+      aud.cloudId = r.auditId;
+      aud.cloudSyncedAt = new Date().toISOString();
+      try { await AppData.saveDB(db); } catch (e) { /* la copia local ya existe */ }
+      if (r.failedPhotos) toast(`No se ${plural(r.failedPhotos, 'pudo', 'pudieron')} subir ${r.failedPhotos} ${plural(r.failedPhotos, 'foto', 'fotos')}.`, 'error');
+      else toast(`También en la nube (${r.entries} ${plural(r.entries, 'check', 'checks')}${r.photos ? ` · ${r.photos} ${plural(r.photos, 'foto', 'fotos')}` : ''}).`);
+    } else if (r && r.skipped === 'enviada') {
+      toast('En la nube esta auditoría ya fue enviada; no se modificó.');
+    } else if (r && r.skipped === 'rol') {
+      toast('Tu rol no crea auditorías: quedó guardada en este navegador.');
+    }
+    return r || {};
+  } catch (e) {
+    toast(`Guardada en este navegador, pero no se pudo subir a la nube: ${e.message || 'error de conexión'}`, 'error');
+    return { error: e.message || 'error' };
+  }
+}
+
 async function saveAudit() {
   const models = db.areas.map(areaModel);
   if (!models.some(m => m.touched)) return toast('Aún no has evaluado nada.', 'error');
@@ -463,10 +456,11 @@ async function saveAudit() {
     aud = { id: uid(), date: day, ts: now, evaluator: db.settings.evaluator, areas: results };
     db.audits.push(aud);
   }
-  if (!save()) { db.audits = JSON.parse(snapshot); return; }
-  drafts = {}; saveDrafts(); ui.openAreas = new Set(); ui.init = false;
+  if (!await save()) { db.audits = JSON.parse(snapshot); return; }
+  saveDraftsSoon.cancel(); drafts = {}; await saveDrafts(); ui.openAreas = new Set(); ui.init = false;
   render();
   toast('Auditoría guardada en el Historial.');
+  await syncToCloud(aud);
 }
 
 /* =====================================================================
@@ -481,6 +475,7 @@ function viewHistorial() {
     <label class="field"><span>Hasta</span><input type="date" data-hist="to" value="${f.to}"></label>
     <label class="field"><span>Resultado</span><select data-hist="only"><option value="">Todos</option><option value="nok" ${f.only === 'nok' ? 'selected' : ''}>Con hallazgos</option><option value="ok" ${f.only === 'ok' ? 'selected' : ''}>Sin hallazgos</option></select></label>
     <button class="btn" data-action="hist-clear">Limpiar filtros</button>
+    <button class="btn" data-action="export-csv" title="Descarga las auditorías filtradas para Excel">Exportar CSV</button>
   </div><div id="histList">${histListHTML()}</div>`;
 }
 
@@ -515,6 +510,49 @@ function histListHTML() {
   const list = filteredAudits();
   if (!list.length) return `<div class="card empty"><h3>Sin resultados</h3><p>Prueba con otros filtros.</p></div>`;
   return `<div class="list-head"><span>${list.length} ${plural(list.length, 'auditoría', 'auditorías')}</span></div>${list.map(({ a, areas }) => dayCardHTML(a, areas)).join('')}`;
+}
+
+/* Al escribir en "Buscar" no hace falta redibujar en cada tecla. */
+const refreshHist = debounce(() => {
+  const list = $('#histList');
+  if (list) list.innerHTML = histListHTML();
+}, 180);
+
+/* ---------- Exportar el historial filtrado a CSV (Excel) ---------- */
+const CSV_HEADERS = ['Fecha', 'Hora', 'Evaluador', 'Área', 'Categoría', 'Ítem', 'Trabajador', 'Resultado', 'Observación', 'Fotos'];
+
+function auditCsvRows(list) {
+  const rows = [];
+  list.forEach(({ a, areas }) => {
+    const time = a.ts ? fmtTime(a.ts) : '';
+    areas.forEach(r => {
+      if (r.notEvaluated) {
+        rows.push([a.date, time, a.evaluator || '', r.areaName, '', '— Área no evaluada', '', '', '', '']);
+        return;
+      }
+      r.blocks.forEach(b => {
+        const cat = CAT_LABEL[b.type] || b.type;
+        b.entries.forEach(e => rows.push([
+          a.date, time, a.evaluator || '', r.areaName, cat, e.text, e.worker || '',
+          e.status === 'ok' ? 'Conforme' : e.status === 'nok' ? 'No conforme' : 'N/A',
+          e.obs || '', (e.photos || []).length
+        ]));
+        (b.absent || []).forEach(x => rows.push([
+          a.date, time, a.evaluator || '', r.areaName, cat, 'Trabajador ausente', x.name, 'Ausente', '', 0
+        ]));
+      });
+    });
+  });
+  return rows;
+}
+
+function exportCsv() {
+  const list = filteredAudits();
+  if (!list.length) return toast('No hay auditorías para exportar con estos filtros.', 'error');
+  const rows = auditCsvRows(list);
+  if (!rows.length) return toast('No hay resultados para exportar.', 'error');
+  SCExport.saveCsv(`auditorias-${todayISO()}.csv`, SCExport.build(CSV_HEADERS, rows));
+  toast(`${rows.length} ${plural(rows.length, 'fila exportada', 'filas exportadas')} a CSV.`);
 }
 
 function dayCardHTML(a, areas) {
@@ -570,7 +608,7 @@ function editAuditModal(id) {
     title: `Editar auditoría · ${fmtDate(a.date)}`, wide: true,
     body: `<div class="form"><label class="field" style="max-width:260px"><span>Evaluador</span><input type="text" id="eaEv" value="${esc(a.evaluator)}"></label>${html || '<p class="muted">No hay áreas evaluadas para editar.</p>'}</div>`,
     buttons: [{ label: 'Cancelar' }, {
-      label: 'Guardar cambios', cls: 'primary', onClick: m => {
+      label: 'Guardar cambios', cls: 'primary', onClick: async m => {
         const upd = [];
         for (const [ri, r] of a.areas.entries()) { if (r.notEvaluated) continue;
           for (const [bi, b] of r.blocks.entries()) for (const [ei, e] of b.entries.entries()) {
@@ -580,7 +618,7 @@ function editAuditModal(id) {
           } }
         upd.forEach(([e, s, o]) => { e.status = s; e.obs = o; if (s !== 'nok') e.photos = []; });
         a.evaluator = $('#eaEv', m).value.trim();
-        save(); render(true); toast('Auditoría actualizada.');
+        await save(); render(true); toast('Auditoría actualizada.');
       }
     }]
   });
@@ -698,21 +736,14 @@ function viewResumen() {
 /* ----- Informe ----- */
 function reportHTML(days) {
   const s = summaryData(days);
-  const rows = s.byArea.map(a => `<tr><td>${esc(a.name)}</td><td>${a.count}</td><td>${a.checks}</td><td>${a.nok}</td><td><b>${pctText(a.pct)}</b></td></tr>`).join('');
-  const nok = [...s.nokEntries].sort((a, b) => a.date.localeCompare(b.date));
-  return `<div class="report">
-    <h2>Informe de Auditorías e Inspecciones</h2>
-    <div class="meta">${esc(db.settings.store || 'Supermercado')} · ${esc(periodLabel(ui.sum.period, s.from, s.to))}<br>
-      Días incluidos: ${days.length ? [...days].sort().map(fmtDate).join(', ') : '—'}<br>
-      Elaborado por: ${esc(db.settings.evaluator || 'Monitora de Calidad')} · Emitido el ${fmtDate(todayISO())}</div>
-    <div class="kpi-line"><div><b>${pctText(s.total)}</b>Cumplimiento general</div><div><b>${s.audits.length}</b>Auditorías</div><div><b>${s.entries.length}</b>Checks evaluados</div><div><b>${nok.length}</b>No conformidades</div><div><b>${db.settings.goal}%</b>Meta</div></div>
-    <h3>Resultados por área</h3>
-    <table><thead><tr><th>Área</th><th>Días evaluada</th><th>Checks</th><th>No conformes</th><th>Cumplimiento</th></tr></thead><tbody>${rows || '<tr><td colspan="5">Sin datos</td></tr>'}</tbody></table>
-    <h3>Cumplimiento por categoría</h3>
-    <table><tbody><tr>${s.byCat.map(c => `<td>${esc(c.name)}: <b>${pctText(c.pct)}</b></td>`).join('')}</tr></tbody></table>
-    <h3>Detalle de no conformidades</h3>
-    ${nok.length ? `<table><thead><tr><th>Fecha</th><th>Área</th><th>Categoría</th><th>Ítem</th><th>Acción correctiva</th></tr></thead><tbody>${nok.map(e => `<tr><td>${fmtDate(e.date)}</td><td>${esc(e.area)}</td><td>${esc(e.label.replace('Check ', ''))}</td><td>${esc(e.text)}${e.worker ? '<br><i>' + esc(e.worker) + '</i>' : ''}</td><td>${e.obs ? esc(e.obs) : '<i>Sin observación registrada</i>'}${(e.photos || []).length ? '<br>' + e.photos.map(p => `<img class="rph" src="${esc(p)}" alt="Foto adjunta">`).join('') : ''}</td></tr>`).join('')}</tbody></table>` : '<p>No se registraron no conformidades en los días seleccionados.</p>'}
-    <div class="sign"><div>Monitora de Calidad</div><div>Jefatura</div></div></div>`;
+  return SCReport.html(s, {
+    days,
+    store: db.settings.store,
+    evaluator: db.settings.evaluator,
+    goal: db.settings.goal,
+    periodText: periodLabel(ui.sum.period, s.from, s.to),
+    today: todayISO()
+  });
 }
 
 function openReport() {
@@ -772,10 +803,10 @@ function areaForm(a) {
       { name: 'bossId', label: 'Jefe responsable', type: 'select', options: [{ value: '', label: 'Sin asignar' }, ...db.bosses.map(b => ({ value: b.id, label: b.name }))] },
       { name: 'workerIds', label: 'Trabajadores del área (toda el área)', type: 'checkboxes', options: db.workers.map(w => ({ value: w.id, label: w.name })), empty: 'Primero agrega trabajadores en la pestaña Trabajadores.' }
     ],
-    onSubmit: d => {
+    onSubmit: async d => {
       if (a) Object.assign(a, d);
       else db.areas.push({ id: uid(), ...d, blocks: defaultBlocks() });
-      save(); render(true);
+      await save(); render(true);
     }
   });
 }
@@ -790,10 +821,10 @@ function personForm(kind, p) {
   formModal({
     title: `${p ? 'Editar' : 'Nuevo'} ${isW ? 'trabajador' : 'jefe responsable'}`, values: p || {},
     fields: [{ name: 'name', label: 'Nombre completo', required: true }, { name: 'role', label: 'Cargo', placeholder: isW ? 'Ej.: Panadero' : 'Ej.: Jefe de Panadería' }],
-    onSubmit: d => {
+    onSubmit: async d => {
       const list = isW ? db.workers : db.bosses;
       if (p) Object.assign(p, d); else list.push({ id: uid(), ...d });
-      save(); render(true);
+      await save(); render(true);
     }
   });
 }
@@ -827,10 +858,10 @@ function blockForm(b) {
       { name: 'type', label: 'Tipo de checklist', type: 'select', options: [{ value: 'limpieza', label: 'Limpieza' }, { value: 'orden', label: 'Orden' }] },
       { name: 'sub', label: 'Sub-área (opcional)', placeholder: 'Ej.: Caliente, Frío, Cocina' }
     ],
-    onSubmit: d => {
+    onSubmit: async d => {
       const a = db.areas.find(x => x.id === ui.cfgArea);
       if (b) Object.assign(b, d); else a.blocks.push({ id: uid(), type: d.type, sub: d.sub, items: [] });
-      save(); render(true);
+      await save(); render(true);
     }
   });
 }
@@ -857,10 +888,11 @@ function handleFiles(list) {
   [...list].forEach(file => {
     if (file.size > MAX) return toast(`"${file.name}" supera 1,5 MB y no se guardó.`, 'error');
     const rd = new FileReader();
-    rd.onload = () => {
+    rd.onload = async () => {
       const entry = { id: uid(), name: file.name, type: file.type, size: file.size, date: todayISO(), data: rd.result };
       files.push(entry);
-      if (!store(FILES_KEY, files)) { files.pop(); return; }
+      try { await AppData.saveFiles(files); }
+      catch (e) { files.pop(); toast(e.message || 'No se pudo guardar el archivo.', 'error'); return; }
       if (ui.cfgTab === 'files') render(true);
       toast(`"${file.name}" guardado.`);
     };
@@ -868,15 +900,30 @@ function handleFiles(list) {
   });
 }
 
+/* Espacio que ocupan los datos en este navegador (aprox.). */
+function localStorageBytes() {
+  let total = 0;
+  try {
+    Object.keys(localStorage).forEach(k => {
+      const v = localStorage.getItem(k);
+      total += (k.length + (v ? v.length : 0)) * 2;
+    });
+  } catch (e) { /* almacenamiento bloqueado */ }
+  return total;
+}
+
 function cfgGeneral() {
   const s = db.settings;
   const hasSample = db.audits.some(r => r.sample) || db.workers.some(w => w.sample);
+  const used = localStorageBytes();
+  const nearLimit = used > 4 * 1024 * 1024;
   return sectionHead('Ajustes generales') + `<form class="card settings-grid" data-form="settings">
       <label class="field"><span>Nombre de la monitora / evaluador</span><input type="text" name="evaluator" value="${esc(s.evaluator)}" placeholder="Aparecerá en auditorías e informes"></label>
       <label class="field"><span>Nombre del local</span><input type="text" name="store" value="${esc(s.store)}" placeholder="Ej.: Supermercado Centro"></label>
       <label class="field"><span>Meta de cumplimiento (%)</span><input type="number" name="goal" min="1" max="100" value="${s.goal}"></label>
       <div style="display:flex;align-items:flex-end"><button class="btn primary">Guardar ajustes</button></div></form>` +
-    sectionHead('Respaldo y datos') + `<div class="card panel"><p class="muted" style="margin-bottom:12px">Los datos viven solo en este navegador. Descarga un respaldo de vez en cuando, y úsalo para llevar la información a otro computador.</p>
+    sectionHead('Respaldo y datos') + `<div class="card panel"><p class="muted" style="margin-bottom:12px">Los datos viven solo en este navegador. Descarga un respaldo de vez en cuando, y úsalo para llevar la información a otro computador.<br>
+      <span class="${nearLimit ? 'p-nok' : ''}">Espacio usado: <b>${fmtSize(used)}</b>${nearLimit ? ' · cerca del límite del navegador. Descarga un respaldo y elimina fotos o archivos antiguos.' : ''}</span></p>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn" data-action="export">Descargar respaldo</button>
         <label class="btn" style="cursor:pointer">Restaurar respaldo<input type="file" id="importInput" accept=".json,application/json" hidden></label>
@@ -885,7 +932,7 @@ function cfgGeneral() {
 }
 
 /* ----- Datos de ejemplo ----- */
-function loadSample() {
+async function loadSample() {
   let seedN = 42;
   const rnd = () => { seedN |= 0; seedN = seedN + 0x6D2B79F5 | 0; let t = Math.imul(seedN ^ seedN >>> 15, 1 | seedN); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
   const mk = x => { const [name, role] = x.split('|'); return { id: uid(), name, role, sample: true }; };
@@ -917,18 +964,14 @@ function loadSample() {
     });
     db.audits.push({ id: uid(), date: isoDate(d), ts: d.toISOString(), evaluator: db.settings.evaluator, areas, sample: true });
   }
-  save(); render(true); toast('Datos de ejemplo cargados. Puedes quitarlos cuando quieras.');
+  await save(); render(true); toast('Datos de ejemplo cargados. Puedes quitarlos cuando quieras.');
 }
-function removeSample() {
+async function removeSample() {
   const ids = new Set(db.workers.filter(w => w.sample).map(w => w.id)), bids = new Set(db.bosses.filter(b => b.sample).map(b => b.id));
   db.audits = db.audits.filter(r => !r.sample);
   db.workers = db.workers.filter(w => !w.sample); db.bosses = db.bosses.filter(b => !b.sample);
   db.areas.forEach(a => { a.workerIds = a.workerIds.filter(id => !ids.has(id)); if (bids.has(a.bossId)) a.bossId = ''; });
-  save(); render(true); toast('Datos de ejemplo eliminados.');
-}
-
-function download(name, href) {
-  const a = document.createElement('a'); a.href = href; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  await save(); render(true); toast('Datos de ejemplo eliminados.');
 }
 
 /* =====================================================================
@@ -967,11 +1010,11 @@ document.addEventListener('click', async e => {
       const { key, s } = el.dataset, d = dEnsure(id), cur = d.checks[key];
       if (cur && cur.s === s) delete d.checks[key];
       else d.checks[key] = s === 'ok' ? { s, o: '', p: [] } : { s, o: cur ? cur.o : '', p: cur ? cur.p : [] };
-      ui.invalid.delete(key); saveDrafts(); redrawArea(id);
+      ui.invalid.delete(key); markDrafts(); redrawArea(id);
       if (s === 'nok' && d.checks[key]) { const inp = $$('[data-obs-input]', $(`[data-area="${id}"]`)).find(i => i.dataset.key === key); if (inp) inp.focus(); }
       break;
     }
-    case 'rm-photo': { const d = dEnsure(id); d.checks[el.dataset.key].p.splice(Number(el.dataset.i), 1); saveDrafts(); redrawArea(id); break; }
+    case 'rm-photo': { const d = dEnsure(id); d.checks[el.dataset.key].p.splice(Number(el.dataset.i), 1); markDrafts(); redrawArea(id); break; }
     case 'absent': {
       const wid = el.dataset.w, d = dEnsure(id), cur = d.workers[wid];
       if (cur && cur.st === 'absent') delete d.workers[wid];
@@ -979,22 +1022,32 @@ document.addEventListener('click', async e => {
         if (!await confirmBox('Este trabajador ya fue evaluado. ¿Marcarlo como ausente y descartar su evaluación?', 'Marcar ausente', true)) break;
         d.workers[wid] = { st: 'absent' };
       } else d.workers[wid] = { st: 'absent' };
-      saveDrafts(); redrawArea(id); break;
+      markDrafts(); redrawArea(id); break;
     }
     case 'eval-worker': workerModal(id, el.dataset.w); break;
     case 'zoom': openLightbox(el.src); break;
     case 'save-audit': saveAudit(); break;
     case 'discard':
-      if (await confirmBox('¿Descartar todo lo que has marcado en esta auditoría sin guardar?', 'Descartar', true)) { drafts = {}; saveDrafts(); render(true); }
+      if (await confirmBox('¿Descartar todo lo que has marcado en esta auditoría sin guardar?', 'Descartar', true)) { saveDraftsSoon.cancel(); drafts = {}; await saveDrafts(); render(true); }
       break;
     /* Historial */
     case 'toggle-day': ui.openDays.has(id) ? ui.openDays.delete(id) : ui.openDays.add(id); $('#histList').innerHTML = histListHTML(); break;
     case 'toggle-obs': ui.closedObs.has(el.dataset.key) ? ui.closedObs.delete(el.dataset.key) : ui.closedObs.add(el.dataset.key); $('#histList').innerHTML = histListHTML(); break;
     case 'edit-aud': editAuditModal(id); break;
-    case 'del-aud':
-      if (await confirmBox('¿Eliminar esta auditoría del Historial? No se puede deshacer.', 'Eliminar', true)) { db.audits = db.audits.filter(r => r.id !== id); save(); render(true); toast('Auditoría eliminada.'); }
+    case 'del-aud': {
+      const target = db.audits.find(r => r.id === id);
+      if (await confirmBox('¿Eliminar esta auditoría del Historial? No se puede deshacer.', 'Eliminar', true)) {
+        db.audits = db.audits.filter(r => r.id !== id);
+        await save(); render(true); toast('Auditoría eliminada.');
+        if (target && window.SupabaseWrite) {
+          SupabaseWrite.removeAudit(target).catch(() =>
+            toast('Se eliminó en este navegador, pero no se pudo borrar de la nube.', 'error'));
+        }
+      }
       break;
+    }
     case 'hist-clear': ui.hist = { q: '', area: '', from: '', to: '', only: '' }; render(true); break;
+    case 'export-csv': exportCsv(); break;
     /* Resumen */
     case 'period': ui.sum.period = el.dataset.p; render(true); break;
     case 'period-nav': shiftRef(Number(el.dataset.dir)); render(true); break;
@@ -1004,56 +1057,56 @@ document.addEventListener('click', async e => {
     case 'add-area': areaForm(); break;
     case 'edit-area': areaForm(area()); break;
     case 'del-area':
-      if (await confirmBox(`¿Eliminar el área "${area().name}"? El historial se conserva.`, 'Eliminar', true)) { db.areas = db.areas.filter(a => a.id !== id); delete drafts[id]; saveDrafts(); save(); render(true); }
+      if (await confirmBox(`¿Eliminar el área "${area().name}"? El historial se conserva.`, 'Eliminar', true)) { db.areas = db.areas.filter(a => a.id !== id); delete drafts[id]; await saveDrafts(); await save(); render(true); }
       break;
     case 'add-worker': personForm('worker'); break;
     case 'edit-worker': personForm('worker', db.workers.find(w => w.id === id)); break;
     case 'del-worker':
-      if (await confirmBox('¿Eliminar este trabajador? Se quitará de las áreas; el historial se conserva.', 'Eliminar', true)) { db.workers = db.workers.filter(w => w.id !== id); db.areas.forEach(a => { a.workerIds = a.workerIds.filter(x => x !== id); }); save(); render(true); }
+      if (await confirmBox('¿Eliminar este trabajador? Se quitará de las áreas; el historial se conserva.', 'Eliminar', true)) { db.workers = db.workers.filter(w => w.id !== id); db.areas.forEach(a => { a.workerIds = a.workerIds.filter(x => x !== id); }); await save(); render(true); }
       break;
     case 'add-boss': personForm('boss'); break;
     case 'edit-boss': personForm('boss', db.bosses.find(b => b.id === id)); break;
     case 'del-boss':
-      if (await confirmBox('¿Eliminar este jefe? Las áreas a su cargo quedarán sin responsable.', 'Eliminar', true)) { db.bosses = db.bosses.filter(b => b.id !== id); db.areas.forEach(a => { if (a.bossId === id) a.bossId = ''; }); save(); render(true); }
+      if (await confirmBox('¿Eliminar este jefe? Las áreas a su cargo quedarán sin responsable.', 'Eliminar', true)) { db.bosses = db.bosses.filter(b => b.id !== id); db.areas.forEach(a => { if (a.bossId === id) a.bossId = ''; }); await save(); render(true); }
       break;
     case 'add-block': blockForm(); break;
     case 'edit-block': blockForm(db.areas.find(a => a.id === ui.cfgArea).blocks.find(b => b.id === id)); break;
     case 'del-block':
-      if (await confirmBox('¿Eliminar este bloque y todos sus ítems?', 'Eliminar', true)) { const a = db.areas.find(x => x.id === ui.cfgArea); a.blocks = a.blocks.filter(b => b.id !== id); save(); render(true); }
+      if (await confirmBox('¿Eliminar este bloque y todos sus ítems?', 'Eliminar', true)) { const a = db.areas.find(x => x.id === ui.cfgArea); a.blocks = a.blocks.filter(b => b.id !== id); await save(); render(true); }
       break;
     case 'edit-item': {
       const b = db.areas.find(x => x.id === ui.cfgArea).blocks.find(x => x.id === el.dataset.block), it = b.items.find(i => i.id === id);
-      formModal({ title: 'Editar ítem', values: it, fields: [{ name: 'text', label: 'Texto del ítem', required: true }], onSubmit: d => { it.text = d.text; save(); render(true); } });
+      formModal({ title: 'Editar ítem', values: it, fields: [{ name: 'text', label: 'Texto del ítem', required: true }], onSubmit: async d => { it.text = d.text; await save(); render(true); } });
       break;
     }
-    case 'del-item': { const b = db.areas.find(x => x.id === ui.cfgArea).blocks.find(x => x.id === el.dataset.block); b.items = b.items.filter(i => i.id !== id); save(); render(true); break; }
+    case 'del-item': { const b = db.areas.find(x => x.id === ui.cfgArea).blocks.find(x => x.id === el.dataset.block); b.items = b.items.filter(i => i.id !== id); await save(); render(true); break; }
     case 'edit-param': {
       const p = db.params.find(x => x.id === id);
-      formModal({ title: 'Editar parámetro', values: p, fields: [{ name: 'text', label: 'Texto del parámetro', required: true }], onSubmit: d => { p.text = d.text; save(); render(true); } });
+      formModal({ title: 'Editar parámetro', values: p, fields: [{ name: 'text', label: 'Texto del parámetro', required: true }], onSubmit: async d => { p.text = d.text; await save(); render(true); } });
       break;
     }
-    case 'del-param': db.params = db.params.filter(p => p.id !== id); save(); render(true); break;
+    case 'del-param': db.params = db.params.filter(p => p.id !== id); await save(); render(true); break;
     case 'copy-checklist':
       formModal({
         title: 'Copiar checklist', submitLabel: 'Copiar',
         fields: [{ name: 'from', label: 'Copiar desde (reemplaza los bloques de esta área)', type: 'select', options: db.areas.filter(a => a.id !== ui.cfgArea).map(a => ({ value: a.id, label: a.name })) }],
-        onSubmit: d => {
+        onSubmit: async d => {
           const src = db.areas.find(a => a.id === d.from), dst = db.areas.find(a => a.id === ui.cfgArea);
           dst.blocks = src.blocks.map(b => ({ id: uid(), type: b.type, sub: b.sub, items: b.items.map(i => ({ id: uid(), text: i.text })) }));
-          save(); render(true); toast('Checklist copiado.');
+          await save(); render(true); toast('Checklist copiado.');
         }
       });
       break;
     case 'dl-file': { const f = files.find(x => x.id === id); download(f.name, f.data); break; }
     case 'del-file':
-      if (await confirmBox('¿Eliminar este archivo?', 'Eliminar', true)) { files = files.filter(f => f.id !== id); store(FILES_KEY, files); render(true); }
+      if (await confirmBox('¿Eliminar este archivo?', 'Eliminar', true)) { files = files.filter(f => f.id !== id); await AppData.saveFiles(files); render(true); }
       break;
     case 'export': download(`respaldo-calidad-${todayISO()}.json`, 'data:application/json;charset=utf-8,' + encodeURIComponent(JSON.stringify({ db, files }))); break;
-    case 'load-sample': if (!db.areas.length) return toast('Crea al menos un área primero.', 'error'); loadSample(); break;
-    case 'remove-sample': removeSample(); break;
+    case 'load-sample': if (!db.areas.length) return toast('Crea al menos un área primero.', 'error'); await loadSample(); break;
+    case 'remove-sample': await removeSample(); break;
     case 'reset':
       if (await confirmBox('Se borrarán TODAS las áreas, trabajadores, auditorías y archivos de este navegador. ¿Continuar?', 'Borrar todo', true)) {
-        db = seed(); drafts = {}; files = []; ui.init = false; save(); saveDrafts(); store(FILES_KEY, files); render(true); toast('Datos restablecidos.');
+        db = seed(); saveDraftsSoon.cancel(); drafts = {}; files = []; ui.init = false; await save(); await saveDrafts(); await AppData.saveFiles(files); render(true); toast('Datos restablecidos.');
       }
       break;
   }
@@ -1061,10 +1114,10 @@ document.addEventListener('click', async e => {
 
 document.addEventListener('input', e => {
   const t = e.target;
-  if (t.dataset && t.dataset.hist) { ui.hist[t.dataset.hist] = t.value; $('#histList').innerHTML = histListHTML(); }
+  if (t.dataset && t.dataset.hist) { ui.hist[t.dataset.hist] = t.value; refreshHist(); }
   if (t.hasAttribute && t.hasAttribute('data-obs-input')) {
     const c = ((drafts[t.dataset.id] || {}).checks || {})[t.dataset.key];
-    if (c) { c.o = t.value; saveDraftsSoon(); t.classList.remove('invalid'); ui.invalid.delete(t.dataset.key); }
+    if (c) { c.o = t.value; markDrafts(); t.classList.remove('invalid'); ui.invalid.delete(t.dataset.key); }
   }
 });
 document.addEventListener('change', async e => {
@@ -1077,23 +1130,23 @@ document.addEventListener('change', async e => {
     const f = t.files[0], { id, key } = t.dataset; t.value = ''; if (!f) return;
     const cur = ((drafts[id] || {}).checks || {})[key]; if (!cur) return;
     if ((cur.p || []).length >= MAX_PHOTOS) return toast(`Máximo ${MAX_PHOTOS} fotos por ítem.`, 'error');
-    try { cur.p = [...(cur.p || []), await compressImage(f)]; ui.invalid.delete(key); saveDrafts(); redrawArea(id); }
+    try { cur.p = [...(cur.p || []), await compressImage(f)]; ui.invalid.delete(key); markDrafts(); redrawArea(id); }
     catch (err) { toast('No se pudo leer la imagen.', 'error'); }
   }
 });
-document.addEventListener('submit', e => {
+document.addEventListener('submit', async e => {
   const f = e.target.dataset && e.target.dataset.form; if (!f) return;
   e.preventDefault();
   const text = e.target.elements.text ? e.target.elements.text.value.trim() : '';
   if (f === 'add-item') {
     const b = db.areas.find(x => x.id === ui.cfgArea).blocks.find(x => x.id === e.target.dataset.block);
-    if (text) { b.items.push({ id: uid(), text }); save(); render(true); const inp = $(`[data-form="add-item"][data-block="${b.id}"] input`); if (inp) inp.focus(); }
+    if (text) { b.items.push({ id: uid(), text }); await save(); render(true); const inp = $(`[data-form="add-item"][data-block="${b.id}"] input`); if (inp) inp.focus(); }
   }
-  if (f === 'add-param' && text) { db.params.push({ id: uid(), text }); save(); render(true); const inp = $('[data-form="add-param"] input'); if (inp) inp.focus(); }
+  if (f === 'add-param' && text) { db.params.push({ id: uid(), text }); await save(); render(true); const inp = $('[data-form="add-param"] input'); if (inp) inp.focus(); }
   if (f === 'settings') {
     const el = e.target.elements, goal = Math.min(100, Math.max(1, Number(el.goal.value) || 90));
     Object.assign(db.settings, { evaluator: el.evaluator.value.trim(), store: el.store.value.trim(), goal });
-    save(); render(true); toast('Ajustes guardados.');
+    await save(); render(true); toast('Ajustes guardados.');
   }
 });
 
@@ -1106,15 +1159,64 @@ function importBackup(file) {
       if (!await confirmBox('Restaurar este respaldo reemplazará los datos actuales. ¿Continuar?', 'Restaurar', true)) return;
       const isV1 = !obj.db.version || obj.db.version < 2;
       db = normalizeDB(isV1 ? migrateV1(obj.db) : obj.db); files = Array.isArray(obj.files) ? obj.files : []; drafts = {}; ui.init = false;
-      save(); saveDrafts(); store(FILES_KEY, files); render(true); toast('Respaldo restaurado.');
+      await save(); await saveDrafts(); await AppData.saveFiles(files); render(true); toast('Respaldo restaurado.');
     } catch (err) { toast('El archivo no es un respaldo válido.', 'error'); }
   };
   rd.readAsText(file);
 }
 
+/* Si se cierra la pestaña o se cambia de aplicación, se escribe lo pendiente. */
+function flushOnExit() {
+  if (!draftsDirty) return;
+  saveDraftsSoon.cancel();
+  saveDrafts();
+}
+window.addEventListener('pagehide', flushOnExit);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushOnExit(); });
+
+/* ---------- Reintento hacia la nube ----------
+   Si una auditoría quedó sin subir (sin internet, sin sesión o un error
+   pasajero), se vuelve a intentar al abrir la app y al iniciar sesión.
+   No bloquea nada: si sigue sin poder, se reintenta más adelante. */
+const pendingSync = () => db.audits.filter(a => !a.cloudSyncedAt && !a.cloudSkipped);
+
+async function syncPending(limit = 5) {
+  if (!window.SupabaseWrite) return { synced: 0, pending: 0 };
+  let synced = 0;
+  for (const aud of pendingSync().slice(-limit)) {
+    let r;
+    try { r = await SupabaseWrite.saveAudit(aud, db); }
+    catch (e) { break; }
+    if (r && r.ok) { aud.cloudId = r.auditId; aud.cloudSyncedAt = new Date().toISOString(); delete aud.cloudSkipped; synced++; }
+    else if (r && ['enviada', 'rol', 'sin-local'].includes(r.skipped)) aud.cloudSkipped = r.skipped;
+    else break;
+  }
+  if (synced) { try { await AppData.saveDB(db); } catch (e) { /* queda en memoria */ } }
+  return { synced, pending: pendingSync().length };
+}
+
+window.SCSync = { pending: syncPending, count: () => pendingSync().length };
+
+/* Al entrar con una cuenta, se sube lo que haya quedado pendiente. */
+if (window.sb && sb.auth && sb.auth.onAuthStateChange) {
+  sb.auth.onAuthStateChange((event, session) => {
+    if (session) setTimeout(() => syncPending().catch(() => {}), 1200);
+  });
+}
+
 /* ---------- Arranque ---------- */
-if (!localStorage.getItem(KEY)) save();
-if (!location.hash) location.hash = '#/inicio';
-render();
+async function boot() {
+  try {
+    await hydrate();
+  } catch (e) {
+    console.error('No se pudieron cargar los datos:', e);
+    toast('No se pudieron cargar los datos guardados. Se parte de cero.', 'error');
+    db = seed();
+  }
+  if (!location.hash) location.hash = '#/inicio';
+  render();
+  syncPending().catch(() => {});
+}
+boot();
 
 })();

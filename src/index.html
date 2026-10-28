@@ -43,6 +43,8 @@
       <header class="topbar">
         <h1 id="pageTitle">Inicio</h1>
         <div class="topbar-right">
+          <span class="chip save-state" id="saveState" hidden>Guardado</span>
+          <button type="button" class="chip user" id="accountChip" hidden>Iniciar sesión</button>
           <span class="chip" id="todayLabel"></span>
           <a class="chip user" href="#/config" id="evaluatorLabel" title="Cambiar en Configuración → General"></a>
         </div>
@@ -56,6 +58,24 @@
   <div id="printArea"></div>
   <input type="file" id="photoInput" accept="image/*" hidden>
 
-  <script src="app.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    if (typeof window.supabase === 'undefined') {
+      document.write('<script src="https://unpkg.com/@supabase/supabase-js@2"><\/script>');
+    }
+  </script>
+  <script src="./supabaseClient.js"></script>
+  <script src="./lib/util.js"></script>
+  <script src="./lib/constants.js"></script>
+  <script src="./lib/photos.js"></script>
+  <script src="./data/provider.js"></script>
+  <script src="./data/local-storage-provider.js"></script>
+  <script src="./data/model.js"></script>
+  <script src="./data/supabase-read.js"></script>
+  <script src="./data/supabase-write.js"></script>
+  <script src="./features/report.js"></script>
+  <script src="./features/csv.js"></script>
+  <script src="./app.js"></script>
+  <script src="./auth.js"></script>
 </body>
 </html>
