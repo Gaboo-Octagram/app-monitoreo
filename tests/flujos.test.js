@@ -2,8 +2,22 @@ const { JSDOM } = require('jsdom');
 const fs = require('fs');
 const path = require('path');
 const dir = path.join(__dirname, '..', 'src') + path.sep;
-const html = fs.readFileSync(dir + 'index.html', 'utf8').replace('<link rel="stylesheet" href="styles.css">', '').replace('<script src="app.js"></script>', '');
-const js = fs.readFileSync(dir + 'app.js', 'utf8');
+
+/* La app está dividida en archivos que se cargan en un orden exacto
+   (ver src/index.html). Se excluyen auth.js y el cliente real de Supabase:
+   las pruebas no necesitan cuenta ni conexión. */
+const FILES = [
+  'lib/util.js', 'lib/constants.js', 'lib/photos.js',
+  'data/provider.js', 'data/local-storage-provider.js', 'data/model.js',
+  'data/supabase-read.js', 'data/supabase-write.js',
+  'features/report.js', 'features/csv.js',
+  'app.js'
+];
+const sources = FILES.map(file => ({ file, code: fs.readFileSync(dir + file, 'utf8') }));
+
+const html = fs.readFileSync(dir + 'index.html', 'utf8')
+  .replace('<link rel="stylesheet" href="styles.css">', '')
+  .replace(/<script[\s\S]*?<\/script>/g, '');
 const errors = [];
 
 function boot(initial) {
@@ -13,7 +27,12 @@ function boot(initial) {
   w.addEventListener('error', e => errors.push('window error: ' + e.message));
   w.scrollTo = () => {}; w.print = () => { w.__printed = true; }; w.Element.prototype.scrollIntoView = () => {};
   w.console.error = (...a) => errors.push('console.error: ' + a.join(' '));
-  const s = d.createElement('script'); s.textContent = js; d.body.appendChild(s);
+  sources.forEach(({ file, code }) => {
+    const s = d.createElement('script');
+    s.textContent = code;
+    try { d.body.appendChild(s); }
+    catch (e) { errors.push(`script ${file}: ` + e.message); throw e; }
+  });
   const t = {
     w, d, $: q => d.querySelector(q), $$: q => [...d.querySelectorAll(q)],
     click(el) { if (!el) throw new Error('click: elemento no encontrado'); el.dispatchEvent(new w.MouseEvent('click', { bubbles: true })); },
@@ -162,12 +181,12 @@ const check = (n, c) => { console.log((c ? 'OK   ' : 'FALLA') + ' ' + n); if (!c
   check('Observaciones se pliegan', !$('.hcard:not(.na) .find'));
   click($('.hcard:not(.na) [data-action="toggle-obs"]')); await tick();
 
-  // Filtros
-  const q = $('[data-hist="q"]'); typeIn(q, 'zzz'); await tick();
+  // Filtros (la búsqueda espera 180 ms antes de redibujar)
+  const q = $('[data-hist="q"]'); typeIn(q, 'zzz'); await tick(250);
   check('Filtro sin coincidencias', $$('[data-day]').length === 0);
-  typeIn(q, 'trabajador tf 1'); await tick();
+  typeIn(q, 'trabajador tf 1'); await tick(250);
   check('Filtro por trabajador', $$('[data-day]').length === 1);
-  typeIn(q, ''); const sel = $('[data-hist="only"]'); sel.value = 'ok'; sel.dispatchEvent(new w.Event('input', { bubbles: true })); await tick();
+  typeIn(q, ''); const sel = $('[data-hist="only"]'); sel.value = 'ok'; sel.dispatchEvent(new w.Event('input', { bubbles: true })); await tick(250);
   check('Filtro "Sin hallazgos" excluye día con hallazgos', $$('[data-day]').length === 0);
   click($('[data-action="hist-clear"]')); await tick();
 
