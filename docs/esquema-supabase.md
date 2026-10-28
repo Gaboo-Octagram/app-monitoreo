@@ -238,12 +238,16 @@ python -m http.server 8000
 1. ~~Pantalla de inicio de sesión~~ — **hecha** (`src/auth.js`): correo y
    contraseña, sesión recordada, nombre y rol, y opción "Seguir sin conexión".
    Todavía no aplica permisos porque los datos son locales.
-2. **Proveedor `supabase-provider.js`** que cumpla el mismo contrato que
-   `AppData` y se active con `AppData.use('supabase')`.
-3. **Adaptar `app.js`** a las diferencias: hoy guarda todo el estado de una vez
+2. **Lectura desde Supabase** — **hecha** (`src/data/supabase-read.js`): lee
+   áreas, checks, parámetros, trabajadores y auditorías, y los cuenta en
+   "Mi cuenta → Datos en la nube". Todavía no reemplaza al almacenamiento
+   local.
+3. **Proveedor `supabase-provider.js`** completo (lectura + escritura) que
+   cumpla el contrato de `AppData` y se active con `AppData.use('supabase')`.
+4. **Adaptar `app.js`** a las diferencias: hoy guarda todo el estado de una vez
    (`saveDB`); con Supabase habrá que guardar por partes y subir las fotos
    aparte.
-4. **Migrar los datos del navegador** (una sola vez) al local del usuario.
-5. **Ajustar los informes** para que incluyan las fotos guardadas en Storage.
-6. **Definir qué pasa al rechazar**: ¿la monitora corrige y reenvía? Eso pide
+5. **Migrar los datos del navegador** (una sola vez) al local del usuario.
+6. **Ajustar los informes** para que incluyan las fotos guardadas en Storage.
+7. **Definir qué pasa al rechazar**: ¿la monitora corrige y reenvía? Eso pide
    una transición nueva en el esquema.

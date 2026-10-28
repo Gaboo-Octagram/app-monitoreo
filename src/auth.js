@@ -226,6 +226,16 @@
               Por ahora la app sigue usando los datos de este navegador. Los permisos
               por rol se aplicarán cuando conectemos las auditorías a Supabase.
             </p>
+
+            <div class="cloud-box">
+              <div class="cloud-head">
+                <div>
+                  <strong>Datos en la nube</strong>
+                  <p class="cloud-msg" id="cloudMsg">Comprueba que la app puede leer tu local desde Supabase.</p>
+                </div>
+                <button class="btn sm" type="button" id="cloudCheck">Comprobar</button>
+              </div>
+            </div>
           </div>
           <div class="modal-foot">
             <button class="btn" type="button" id="accountBack">Cerrar</button>
@@ -254,7 +264,57 @@
       openLogin();
     });
 
+    const cloudBtn = modal.querySelector('#cloudCheck');
+    if (cloudBtn) cloudBtn.addEventListener('click', () => runCloudCheck(cloudBtn));
+
     modal.querySelector('#accountClose').focus();
+  }
+
+  /* ---------- Comprobación de la nube ---------- */
+  function cloudMessage(text, kind) {
+    const box = modal && modal.querySelector('#cloudMsg');
+    if (!box) return;
+    box.textContent = text;
+    box.className = 'cloud-msg' + (kind ? ' ' + kind : '');
+  }
+
+  function describeCloud(r) {
+    const n = (count, one, many) => count + ' ' + (count === 1 ? one : many);
+    if (!r.areas) {
+      return 'La nube responde, pero el local «' + (r.store || 'sin nombre') + '» todavía no tiene áreas.';
+    }
+    const parts = [
+      n(r.areas, 'área', 'áreas'),
+      n(r.items, 'check', 'checks'),
+      n(r.params, 'parámetro', 'parámetros')
+    ];
+    if (r.workers) parts.push(n(r.workers, 'trabajador', 'trabajadores'));
+    const audits = r.audits.total
+      ? n(r.audits.total, 'auditoría', 'auditorías') +
+        (r.audits.lastDate ? ' · última del ' + r.audits.lastDate : '')
+      : 'Sin auditorías todavía';
+    return (r.store ? r.store + ': ' : '') + parts.join(' · ') + '. ' + audits + '.';
+  }
+
+  async function runCloudCheck(btn) {
+    if (!window.SupabaseRead) {
+      cloudMessage('La comprobación no está disponible. Recarga la página.', 'bad');
+      return;
+    }
+    const label = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Comprobando…';
+    cloudMessage('Consultando la nube…', '');
+    try {
+      const r = await window.SupabaseRead.summary();
+      cloudMessage(describeCloud(r), 'ok');
+    } catch (e) {
+      cloudMessage(e.message || 'No se pudo comprobar la nube.', 'bad');
+      console.warn('Comprobación de la nube:', e);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = label;
+    }
   }
 
   function esc(text) {

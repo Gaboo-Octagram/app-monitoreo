@@ -56,6 +56,8 @@ Al abrir, la app muestra una pantalla para entrar con la cuenta de Supabase
 - Con sesión iniciada, la barra superior muestra el nombre y el rol, y ese botón
   abre **Mi cuenta** (rol, local, correo y cerrar sesión).
 - La lógica está en `src/auth.js`, separada de las auditorías.
+- **Mi cuenta → Datos en la nube → Comprobar** lee el catálogo del local y
+  cuenta las auditorías que hay en Supabase. Solo lee: no cambia ni sube nada.
 - **Todavía no aplica permisos**: los roles se harán efectivos cuando la app
   lea y escriba en Supabase. Hasta entonces los datos siguen en el navegador.
 
@@ -70,18 +72,22 @@ algunos navegadores bloquean peticiones externas desde `file://`.
   URL y anon key.
 - Ese archivo está en `.gitignore`: **nunca** subir claves ni respaldos.
 - La conexión se inicializa sola y queda disponible en `window.sb`.
-- Todavía no hay tablas ni datos en Supabase; la app sigue usando localStorage.
+- La base ya está creada y con datos iniciales; la app todavía guarda las
+  auditorías en el navegador.
+- `src/data/supabase-read.js` lee el catálogo y las auditorías de la nube
+  (primera parte del futuro `supabase-provider.js`). Se prueba desde
+  **Mi cuenta → Datos en la nube**.
 - El diseño de la base está en `docs/schema.sql`, explicado en
-  `docs/esquema-supabase.md`. **No se ejecutó todavía.**
+  `docs/esquema-supabase.md`.
 - Para repetir la prueba del esquema: `tests/schema/` (ver su README).
 
 ## Estado
-- Versión: 2.3 (acceso con Supabase)
+- Versión: 2.4 (lectura de Supabase)
 - Almacenamiento: localStorage (solo navegador), aislado tras `AppData`
-- Cliente Supabase: conectado; ya permite iniciar sesión y muestra el rol
+- Cliente Supabase: conectado; inicio de sesión, rol y lectura del catálogo
 - Base de datos: tablas, permisos y Storage creados en el proyecto real
 - Esquema SQL: validado con 36 comprobaciones (`tests/schema/`)
-- Siguiente: leer y escribir las auditorías en Supabase
+- Siguiente: escribir en Supabase (auditorías, fotos e informes)
 
 ## Licencia
 Sin licencia. Todos los derechos reservados.

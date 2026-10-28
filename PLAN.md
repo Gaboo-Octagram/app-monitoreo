@@ -27,9 +27,14 @@ Actualizado: 28-10-2026. Estado actual: versión 2 funcionando, con datos guarda
 - **Acceso con Supabase:** `src/auth.js` con pantalla de entrada (correo y
   contraseña), opción "Seguir sin conexión", sesión recordada, nombre y rol en
   la barra superior y panel "Mi cuenta".
+- **Lectura desde Supabase:** `src/data/supabase-read.js` lee áreas, checks,
+  parámetros, trabajadores y auditorías del local, y los cuenta en
+  "Mi cuenta → Datos en la nube". Solo lee: la app sigue guardando en el
+  navegador.
 
 ### Pendiente
-- Fase 1: permisos por rol en la app y gestión de usuarios desde la interfaz.
+- Fase 1: escribir las auditorías en Supabase (guardado por partes), permisos
+  por rol en la app y gestión de usuarios desde la interfaz.
 - Fase 2: mejoras locales (historial de solo lectura, conformidad de la jefa,
   borrado con respaldo).
 - Fase 3: leer y escribir en Supabase (proveedor `supabase-provider.js`),
