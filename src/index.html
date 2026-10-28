@@ -57,6 +57,11 @@
   <input type="file" id="photoInput" accept="image/*" hidden>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    if (typeof window.supabase === 'undefined') {
+      document.write('<script src="https://unpkg.com/@supabase/supabase-js@2"><\/script>');
+    }
+  </script>
   <script src="./supabaseClient.js"></script>
   <script src="./app.js"></script>
 </body>
