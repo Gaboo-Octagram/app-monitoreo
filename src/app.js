@@ -28,7 +28,6 @@ const pctText = p => p === null || p === undefined ? '--%' : p + '%';
 const avg = arr => arr.length ? Math.round(arr.reduce((s, x) => s + x, 0) / arr.length) : null;
 
 const CAT_LABEL = { trabajadores: 'Trabajadores', limpieza: 'Limpieza', orden: 'Orden' };
-const KEY = 'sc_data_v2', OLD_KEY = 'sc_data_v1', DRAFT_KEY = 'sc_drafts_v2', FILES_KEY = 'sc_files_v1';
 const MAX_PHOTOS = 3;
 const STATUS_LABEL = { pending: 'Pendiente', review: 'En revisión', done: 'Completado' };
 const COLORS = ['#f0b429', '#a779f5', '#2fd4a4', '#4c8dff', '#f0646d', '#38bdf8', '#fb923c'];
@@ -44,15 +43,9 @@ const CAMERA = svg('<path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-
 const WARN = svg('<path d="M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/>', 14);
 const CAL = svg('<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>');
 
-/* ---------- Almacenamiento ---------- */
-function load(key, fallback) {
-  try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) : fallback; }
-  catch (e) { return fallback; }
-}
-function store(key, val) {
-  try { localStorage.setItem(key, JSON.stringify(val)); return true; }
-  catch (e) { toast('No se pudo guardar: almacenamiento lleno o bloqueado por el navegador.', 'error'); return false; }
-}
+/* ---------- Almacenamiento (a través de la capa de datos) ---------- */
+/* Las claves ya viven en src/data/local-storage-provider.js.
+   Acá solo se usan las operaciones de alto nivel de AppData. */
 
 /* ---------- Datos iniciales ---------- */
 const DEFAULT_PARAMS = ['Lavado de manos', 'Uso de mascarilla', 'Uso de cofia', 'Sin joyas', 'Uniforme', 'Sin heridas'];
@@ -95,19 +88,37 @@ function migrateV1(o) {
   d.params = withP ? withP.items.personal.map(i => ({ id: i.id || uid(), text: i.text })) : mkItems(DEFAULT_PARAMS);
   return d;
 }
-function loadDB() {
-  const v2 = load(KEY, null); if (v2) return normalizeDB(v2);
-  const v1 = load(OLD_KEY, null); if (v1) return normalizeDB(migrateV1(v1));
-  return seed();
+/* ---------- Estado de datos ----------
+   db, drafts y files se llenan en hydrate() antes del primer render. */
+let db = seed();
+let drafts = {};
+let files = [];
+
+async function hydrate() {
+  const v2 = await AppData.loadDB();
+  if (v2) {
+    db = normalizeDB(v2);
+  } else {
+    const v1 = await AppData.loadLegacyDB();
+    db = v1 ? normalizeDB(migrateV1(v1)) : seed();
+    await save();
+  }
+  drafts = (await AppData.loadDrafts()) || {};
+  files = (await AppData.loadFiles()) || [];
 }
 
-let db = loadDB();
-let drafts = load(DRAFT_KEY, {});
-let files = load(FILES_KEY, []);
-const save = () => store(KEY, db);
-const saveDrafts = () => store(DRAFT_KEY, drafts);
+async function save() {
+  try { await AppData.saveDB(db); return true; }
+  catch (e) { toast(e.message || 'No se pudo guardar.', 'error'); return false; }
+}
+
+async function saveDrafts() {
+  try { await AppData.saveDrafts(drafts); return true; }
+  catch (e) { toast(e.message || 'No se pudo guardar el borrador.', 'error'); return false; }
+}
+
 let draftTimer = null;
-const saveDraftsSoon = () => { clearTimeout(draftTimer); draftTimer = setTimeout(saveDrafts, 350); };
+const saveDraftsSoon = () => { clearTimeout(draftTimer); draftTimer = setTimeout(() => { saveDrafts(); }, 350); };
 const dEnsure = id => { const d = drafts[id] = drafts[id] || {}; d.checks = d.checks || {}; d.workers = d.workers || {}; return d; };
 
 /* ---------- Estado de la interfaz ---------- */
@@ -355,13 +366,13 @@ function workerModal(areaId, wid) {
   modal({
     title: `Higiene · ${w.name}`, titleHTML: `Higiene · <span>${esc(w.name)}</span>`, size: 'mid', body: body(),
     buttons: [{ label: 'Cancelar' }, {
-      label: 'Guardar Check', cls: 'primary', onClick: () => {
+      label: 'Guardar Check', cls: 'primary', onClick: async () => {
         const miss = db.params.find(p => !st[p.id]);
         if (miss) { bad = miss.id; draw(); toast('Marca todos los parámetros (usa N/A si no aplica).', 'error'); return false; }
         const noObs = db.params.find(p => st[p.id].s === 'nok' && !st[p.id].o.trim() && !st[p.id].p.length);
         if (noObs) { bad = noObs.id; draw(); toast('Agrega una observación o una foto en lo que no cumple.', 'error'); return false; }
         dEnsure(areaId).workers[wid] = { st: 'done', items: st };
-        saveDrafts(); redrawArea(areaId);
+        await saveDrafts(); redrawArea(areaId);
       }
     }],
     onOpen: m => {
@@ -463,8 +474,8 @@ async function saveAudit() {
     aud = { id: uid(), date: day, ts: now, evaluator: db.settings.evaluator, areas: results };
     db.audits.push(aud);
   }
-  if (!save()) { db.audits = JSON.parse(snapshot); return; }
-  drafts = {}; saveDrafts(); ui.openAreas = new Set(); ui.init = false;
+  if (!await save()) { db.audits = JSON.parse(snapshot); return; }
+  drafts = {}; await saveDrafts(); ui.openAreas = new Set(); ui.init = false;
   render();
   toast('Auditoría guardada en el Historial.');
 }
@@ -570,7 +581,7 @@ function editAuditModal(id) {
     title: `Editar auditoría · ${fmtDate(a.date)}`, wide: true,
     body: `<div class="form"><label class="field" style="max-width:260px"><span>Evaluador</span><input type="text" id="eaEv" value="${esc(a.evaluator)}"></label>${html || '<p class="muted">No hay áreas evaluadas para editar.</p>'}</div>`,
     buttons: [{ label: 'Cancelar' }, {
-      label: 'Guardar cambios', cls: 'primary', onClick: m => {
+      label: 'Guardar cambios', cls: 'primary', onClick: async m => {
         const upd = [];
         for (const [ri, r] of a.areas.entries()) { if (r.notEvaluated) continue;
           for (const [bi, b] of r.blocks.entries()) for (const [ei, e] of b.entries.entries()) {
@@ -580,7 +591,7 @@ function editAuditModal(id) {
           } }
         upd.forEach(([e, s, o]) => { e.status = s; e.obs = o; if (s !== 'nok') e.photos = []; });
         a.evaluator = $('#eaEv', m).value.trim();
-        save(); render(true); toast('Auditoría actualizada.');
+        await save(); render(true); toast('Auditoría actualizada.');
       }
     }]
   });
@@ -772,10 +783,10 @@ function areaForm(a) {
       { name: 'bossId', label: 'Jefe responsable', type: 'select', options: [{ value: '', label: 'Sin asignar' }, ...db.bosses.map(b => ({ value: b.id, label: b.name }))] },
       { name: 'workerIds', label: 'Trabajadores del área (toda el área)', type: 'checkboxes', options: db.workers.map(w => ({ value: w.id, label: w.name })), empty: 'Primero agrega trabajadores en la pestaña Trabajadores.' }
     ],
-    onSubmit: d => {
+    onSubmit: async d => {
       if (a) Object.assign(a, d);
       else db.areas.push({ id: uid(), ...d, blocks: defaultBlocks() });
-      save(); render(true);
+      await save(); render(true);
     }
   });
 }
@@ -790,10 +801,10 @@ function personForm(kind, p) {
   formModal({
     title: `${p ? 'Editar' : 'Nuevo'} ${isW ? 'trabajador' : 'jefe responsable'}`, values: p || {},
     fields: [{ name: 'name', label: 'Nombre completo', required: true }, { name: 'role', label: 'Cargo', placeholder: isW ? 'Ej.: Panadero' : 'Ej.: Jefe de Panadería' }],
-    onSubmit: d => {
+    onSubmit: async d => {
       const list = isW ? db.workers : db.bosses;
       if (p) Object.assign(p, d); else list.push({ id: uid(), ...d });
-      save(); render(true);
+      await save(); render(true);
     }
   });
 }
@@ -827,10 +838,10 @@ function blockForm(b) {
       { name: 'type', label: 'Tipo de checklist', type: 'select', options: [{ value: 'limpieza', label: 'Limpieza' }, { value: 'orden', label: 'Orden' }] },
       { name: 'sub', label: 'Sub-área (opcional)', placeholder: 'Ej.: Caliente, Frío, Cocina' }
     ],
-    onSubmit: d => {
+    onSubmit: async d => {
       const a = db.areas.find(x => x.id === ui.cfgArea);
       if (b) Object.assign(b, d); else a.blocks.push({ id: uid(), type: d.type, sub: d.sub, items: [] });
-      save(); render(true);
+      await save(); render(true);
     }
   });
 }
@@ -857,10 +868,11 @@ function handleFiles(list) {
   [...list].forEach(file => {
     if (file.size > MAX) return toast(`"${file.name}" supera 1,5 MB y no se guardó.`, 'error');
     const rd = new FileReader();
-    rd.onload = () => {
+    rd.onload = async () => {
       const entry = { id: uid(), name: file.name, type: file.type, size: file.size, date: todayISO(), data: rd.result };
       files.push(entry);
-      if (!store(FILES_KEY, files)) { files.pop(); return; }
+      try { await AppData.saveFiles(files); }
+      catch (e) { files.pop(); toast(e.message || 'No se pudo guardar el archivo.', 'error'); return; }
       if (ui.cfgTab === 'files') render(true);
       toast(`"${file.name}" guardado.`);
     };
@@ -885,7 +897,7 @@ function cfgGeneral() {
 }
 
 /* ----- Datos de ejemplo ----- */
-function loadSample() {
+async function loadSample() {
   let seedN = 42;
   const rnd = () => { seedN |= 0; seedN = seedN + 0x6D2B79F5 | 0; let t = Math.imul(seedN ^ seedN >>> 15, 1 | seedN); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
   const mk = x => { const [name, role] = x.split('|'); return { id: uid(), name, role, sample: true }; };
@@ -917,14 +929,14 @@ function loadSample() {
     });
     db.audits.push({ id: uid(), date: isoDate(d), ts: d.toISOString(), evaluator: db.settings.evaluator, areas, sample: true });
   }
-  save(); render(true); toast('Datos de ejemplo cargados. Puedes quitarlos cuando quieras.');
+  await save(); render(true); toast('Datos de ejemplo cargados. Puedes quitarlos cuando quieras.');
 }
-function removeSample() {
+async function removeSample() {
   const ids = new Set(db.workers.filter(w => w.sample).map(w => w.id)), bids = new Set(db.bosses.filter(b => b.sample).map(b => b.id));
   db.audits = db.audits.filter(r => !r.sample);
   db.workers = db.workers.filter(w => !w.sample); db.bosses = db.bosses.filter(b => !b.sample);
   db.areas.forEach(a => { a.workerIds = a.workerIds.filter(id => !ids.has(id)); if (bids.has(a.bossId)) a.bossId = ''; });
-  save(); render(true); toast('Datos de ejemplo eliminados.');
+  await save(); render(true); toast('Datos de ejemplo eliminados.');
 }
 
 function download(name, href) {
@@ -967,11 +979,11 @@ document.addEventListener('click', async e => {
       const { key, s } = el.dataset, d = dEnsure(id), cur = d.checks[key];
       if (cur && cur.s === s) delete d.checks[key];
       else d.checks[key] = s === 'ok' ? { s, o: '', p: [] } : { s, o: cur ? cur.o : '', p: cur ? cur.p : [] };
-      ui.invalid.delete(key); saveDrafts(); redrawArea(id);
+      ui.invalid.delete(key); await saveDrafts(); redrawArea(id);
       if (s === 'nok' && d.checks[key]) { const inp = $$('[data-obs-input]', $(`[data-area="${id}"]`)).find(i => i.dataset.key === key); if (inp) inp.focus(); }
       break;
     }
-    case 'rm-photo': { const d = dEnsure(id); d.checks[el.dataset.key].p.splice(Number(el.dataset.i), 1); saveDrafts(); redrawArea(id); break; }
+    case 'rm-photo': { const d = dEnsure(id); d.checks[el.dataset.key].p.splice(Number(el.dataset.i), 1); await saveDrafts(); redrawArea(id); break; }
     case 'absent': {
       const wid = el.dataset.w, d = dEnsure(id), cur = d.workers[wid];
       if (cur && cur.st === 'absent') delete d.workers[wid];
@@ -979,20 +991,20 @@ document.addEventListener('click', async e => {
         if (!await confirmBox('Este trabajador ya fue evaluado. ¿Marcarlo como ausente y descartar su evaluación?', 'Marcar ausente', true)) break;
         d.workers[wid] = { st: 'absent' };
       } else d.workers[wid] = { st: 'absent' };
-      saveDrafts(); redrawArea(id); break;
+      await saveDrafts(); redrawArea(id); break;
     }
     case 'eval-worker': workerModal(id, el.dataset.w); break;
     case 'zoom': openLightbox(el.src); break;
     case 'save-audit': saveAudit(); break;
     case 'discard':
-      if (await confirmBox('¿Descartar todo lo que has marcado en esta auditoría sin guardar?', 'Descartar', true)) { drafts = {}; saveDrafts(); render(true); }
+      if (await confirmBox('¿Descartar todo lo que has marcado en esta auditoría sin guardar?', 'Descartar', true)) { drafts = {}; await saveDrafts(); render(true); }
       break;
     /* Historial */
     case 'toggle-day': ui.openDays.has(id) ? ui.openDays.delete(id) : ui.openDays.add(id); $('#histList').innerHTML = histListHTML(); break;
     case 'toggle-obs': ui.closedObs.has(el.dataset.key) ? ui.closedObs.delete(el.dataset.key) : ui.closedObs.add(el.dataset.key); $('#histList').innerHTML = histListHTML(); break;
     case 'edit-aud': editAuditModal(id); break;
     case 'del-aud':
-      if (await confirmBox('¿Eliminar esta auditoría del Historial? No se puede deshacer.', 'Eliminar', true)) { db.audits = db.audits.filter(r => r.id !== id); save(); render(true); toast('Auditoría eliminada.'); }
+      if (await confirmBox('¿Eliminar esta auditoría del Historial? No se puede deshacer.', 'Eliminar', true)) { db.audits = db.audits.filter(r => r.id !== id); await save(); render(true); toast('Auditoría eliminada.'); }
       break;
     case 'hist-clear': ui.hist = { q: '', area: '', from: '', to: '', only: '' }; render(true); break;
     /* Resumen */
@@ -1004,56 +1016,56 @@ document.addEventListener('click', async e => {
     case 'add-area': areaForm(); break;
     case 'edit-area': areaForm(area()); break;
     case 'del-area':
-      if (await confirmBox(`¿Eliminar el área "${area().name}"? El historial se conserva.`, 'Eliminar', true)) { db.areas = db.areas.filter(a => a.id !== id); delete drafts[id]; saveDrafts(); save(); render(true); }
+      if (await confirmBox(`¿Eliminar el área "${area().name}"? El historial se conserva.`, 'Eliminar', true)) { db.areas = db.areas.filter(a => a.id !== id); delete drafts[id]; await saveDrafts(); await save(); render(true); }
       break;
     case 'add-worker': personForm('worker'); break;
     case 'edit-worker': personForm('worker', db.workers.find(w => w.id === id)); break;
     case 'del-worker':
-      if (await confirmBox('¿Eliminar este trabajador? Se quitará de las áreas; el historial se conserva.', 'Eliminar', true)) { db.workers = db.workers.filter(w => w.id !== id); db.areas.forEach(a => { a.workerIds = a.workerIds.filter(x => x !== id); }); save(); render(true); }
+      if (await confirmBox('¿Eliminar este trabajador? Se quitará de las áreas; el historial se conserva.', 'Eliminar', true)) { db.workers = db.workers.filter(w => w.id !== id); db.areas.forEach(a => { a.workerIds = a.workerIds.filter(x => x !== id); }); await save(); render(true); }
       break;
     case 'add-boss': personForm('boss'); break;
     case 'edit-boss': personForm('boss', db.bosses.find(b => b.id === id)); break;
     case 'del-boss':
-      if (await confirmBox('¿Eliminar este jefe? Las áreas a su cargo quedarán sin responsable.', 'Eliminar', true)) { db.bosses = db.bosses.filter(b => b.id !== id); db.areas.forEach(a => { if (a.bossId === id) a.bossId = ''; }); save(); render(true); }
+      if (await confirmBox('¿Eliminar este jefe? Las áreas a su cargo quedarán sin responsable.', 'Eliminar', true)) { db.bosses = db.bosses.filter(b => b.id !== id); db.areas.forEach(a => { if (a.bossId === id) a.bossId = ''; }); await save(); render(true); }
       break;
     case 'add-block': blockForm(); break;
     case 'edit-block': blockForm(db.areas.find(a => a.id === ui.cfgArea).blocks.find(b => b.id === id)); break;
     case 'del-block':
-      if (await confirmBox('¿Eliminar este bloque y todos sus ítems?', 'Eliminar', true)) { const a = db.areas.find(x => x.id === ui.cfgArea); a.blocks = a.blocks.filter(b => b.id !== id); save(); render(true); }
+      if (await confirmBox('¿Eliminar este bloque y todos sus ítems?', 'Eliminar', true)) { const a = db.areas.find(x => x.id === ui.cfgArea); a.blocks = a.blocks.filter(b => b.id !== id); await save(); render(true); }
       break;
     case 'edit-item': {
       const b = db.areas.find(x => x.id === ui.cfgArea).blocks.find(x => x.id === el.dataset.block), it = b.items.find(i => i.id === id);
-      formModal({ title: 'Editar ítem', values: it, fields: [{ name: 'text', label: 'Texto del ítem', required: true }], onSubmit: d => { it.text = d.text; save(); render(true); } });
+      formModal({ title: 'Editar ítem', values: it, fields: [{ name: 'text', label: 'Texto del ítem', required: true }], onSubmit: async d => { it.text = d.text; await save(); render(true); } });
       break;
     }
-    case 'del-item': { const b = db.areas.find(x => x.id === ui.cfgArea).blocks.find(x => x.id === el.dataset.block); b.items = b.items.filter(i => i.id !== id); save(); render(true); break; }
+    case 'del-item': { const b = db.areas.find(x => x.id === ui.cfgArea).blocks.find(x => x.id === el.dataset.block); b.items = b.items.filter(i => i.id !== id); await save(); render(true); break; }
     case 'edit-param': {
       const p = db.params.find(x => x.id === id);
-      formModal({ title: 'Editar parámetro', values: p, fields: [{ name: 'text', label: 'Texto del parámetro', required: true }], onSubmit: d => { p.text = d.text; save(); render(true); } });
+      formModal({ title: 'Editar parámetro', values: p, fields: [{ name: 'text', label: 'Texto del parámetro', required: true }], onSubmit: async d => { p.text = d.text; await save(); render(true); } });
       break;
     }
-    case 'del-param': db.params = db.params.filter(p => p.id !== id); save(); render(true); break;
+    case 'del-param': db.params = db.params.filter(p => p.id !== id); await save(); render(true); break;
     case 'copy-checklist':
       formModal({
         title: 'Copiar checklist', submitLabel: 'Copiar',
         fields: [{ name: 'from', label: 'Copiar desde (reemplaza los bloques de esta área)', type: 'select', options: db.areas.filter(a => a.id !== ui.cfgArea).map(a => ({ value: a.id, label: a.name })) }],
-        onSubmit: d => {
+        onSubmit: async d => {
           const src = db.areas.find(a => a.id === d.from), dst = db.areas.find(a => a.id === ui.cfgArea);
           dst.blocks = src.blocks.map(b => ({ id: uid(), type: b.type, sub: b.sub, items: b.items.map(i => ({ id: uid(), text: i.text })) }));
-          save(); render(true); toast('Checklist copiado.');
+          await save(); render(true); toast('Checklist copiado.');
         }
       });
       break;
     case 'dl-file': { const f = files.find(x => x.id === id); download(f.name, f.data); break; }
     case 'del-file':
-      if (await confirmBox('¿Eliminar este archivo?', 'Eliminar', true)) { files = files.filter(f => f.id !== id); store(FILES_KEY, files); render(true); }
+      if (await confirmBox('¿Eliminar este archivo?', 'Eliminar', true)) { files = files.filter(f => f.id !== id); await AppData.saveFiles(files); render(true); }
       break;
     case 'export': download(`respaldo-calidad-${todayISO()}.json`, 'data:application/json;charset=utf-8,' + encodeURIComponent(JSON.stringify({ db, files }))); break;
-    case 'load-sample': if (!db.areas.length) return toast('Crea al menos un área primero.', 'error'); loadSample(); break;
-    case 'remove-sample': removeSample(); break;
+    case 'load-sample': if (!db.areas.length) return toast('Crea al menos un área primero.', 'error'); await loadSample(); break;
+    case 'remove-sample': await removeSample(); break;
     case 'reset':
       if (await confirmBox('Se borrarán TODAS las áreas, trabajadores, auditorías y archivos de este navegador. ¿Continuar?', 'Borrar todo', true)) {
-        db = seed(); drafts = {}; files = []; ui.init = false; save(); saveDrafts(); store(FILES_KEY, files); render(true); toast('Datos restablecidos.');
+        db = seed(); drafts = {}; files = []; ui.init = false; await save(); await saveDrafts(); await AppData.saveFiles(files); render(true); toast('Datos restablecidos.');
       }
       break;
   }
@@ -1077,23 +1089,23 @@ document.addEventListener('change', async e => {
     const f = t.files[0], { id, key } = t.dataset; t.value = ''; if (!f) return;
     const cur = ((drafts[id] || {}).checks || {})[key]; if (!cur) return;
     if ((cur.p || []).length >= MAX_PHOTOS) return toast(`Máximo ${MAX_PHOTOS} fotos por ítem.`, 'error');
-    try { cur.p = [...(cur.p || []), await compressImage(f)]; ui.invalid.delete(key); saveDrafts(); redrawArea(id); }
+    try { cur.p = [...(cur.p || []), await compressImage(f)]; ui.invalid.delete(key); await saveDrafts(); redrawArea(id); }
     catch (err) { toast('No se pudo leer la imagen.', 'error'); }
   }
 });
-document.addEventListener('submit', e => {
+document.addEventListener('submit', async e => {
   const f = e.target.dataset && e.target.dataset.form; if (!f) return;
   e.preventDefault();
   const text = e.target.elements.text ? e.target.elements.text.value.trim() : '';
   if (f === 'add-item') {
     const b = db.areas.find(x => x.id === ui.cfgArea).blocks.find(x => x.id === e.target.dataset.block);
-    if (text) { b.items.push({ id: uid(), text }); save(); render(true); const inp = $(`[data-form="add-item"][data-block="${b.id}"] input`); if (inp) inp.focus(); }
+    if (text) { b.items.push({ id: uid(), text }); await save(); render(true); const inp = $(`[data-form="add-item"][data-block="${b.id}"] input`); if (inp) inp.focus(); }
   }
-  if (f === 'add-param' && text) { db.params.push({ id: uid(), text }); save(); render(true); const inp = $('[data-form="add-param"] input'); if (inp) inp.focus(); }
+  if (f === 'add-param' && text) { db.params.push({ id: uid(), text }); await save(); render(true); const inp = $('[data-form="add-param"] input'); if (inp) inp.focus(); }
   if (f === 'settings') {
     const el = e.target.elements, goal = Math.min(100, Math.max(1, Number(el.goal.value) || 90));
     Object.assign(db.settings, { evaluator: el.evaluator.value.trim(), store: el.store.value.trim(), goal });
-    save(); render(true); toast('Ajustes guardados.');
+    await save(); render(true); toast('Ajustes guardados.');
   }
 });
 
@@ -1106,15 +1118,24 @@ function importBackup(file) {
       if (!await confirmBox('Restaurar este respaldo reemplazará los datos actuales. ¿Continuar?', 'Restaurar', true)) return;
       const isV1 = !obj.db.version || obj.db.version < 2;
       db = normalizeDB(isV1 ? migrateV1(obj.db) : obj.db); files = Array.isArray(obj.files) ? obj.files : []; drafts = {}; ui.init = false;
-      save(); saveDrafts(); store(FILES_KEY, files); render(true); toast('Respaldo restaurado.');
+      await save(); await saveDrafts(); await AppData.saveFiles(files); render(true); toast('Respaldo restaurado.');
     } catch (err) { toast('El archivo no es un respaldo válido.', 'error'); }
   };
   rd.readAsText(file);
 }
 
 /* ---------- Arranque ---------- */
-if (!localStorage.getItem(KEY)) save();
-if (!location.hash) location.hash = '#/inicio';
-render();
+async function boot() {
+  try {
+    await hydrate();
+  } catch (e) {
+    console.error('No se pudieron cargar los datos:', e);
+    toast('No se pudieron cargar los datos guardados. Se parte de cero.', 'error');
+    db = seed();
+  }
+  if (!location.hash) location.hash = '#/inicio';
+  render();
+}
+boot();
 
 })();

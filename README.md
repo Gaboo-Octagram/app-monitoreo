@@ -15,19 +15,51 @@ App web vanilla (HTML/CSS/JS) para control de auditorías e inspecciones en supe
 ## Estructura
 ```
 /
-├── src/        # Código fuente (index.html, app.js, styles.css)
+├── src/
+│   ├── index.html              # Página principal (orden de carga de scripts)
+│   ├── app.js                  # Lógica y vistas de la app
+│   ├── styles.css              # Estilos
+│   ├── supabaseClient.js       # Claves reales (NO se sube al repo)
+│   ├── supabaseClient.example.js # Plantilla pública
+│   └── data/
+│       ├── provider.js         # Fachada AppData (contrato de datos)
+│       └── local-storage-provider.js # Implementación actual
 ├── tests/      # Pruebas simuladas
 ├── docs/       # Documentación/imágenes de referencia
 ├── PLAN.md     # Plan de trabajo
 └── README.md
 ```
 
+## Capa de datos
+La app **no** llama a `localStorage` directamente: todo pasa por `AppData`
+(`src/data/provider.js`). El proveedor activo se elige en una sola línea de
+`src/data/local-storage-provider.js`:
+
+```js
+AppData.use('localStorage');   // hoy
+// AppData.use('supabase');    // cuando exista supabase-provider.js
+```
+
+Los métodos son asíncronos a propósito (`await AppData.saveDB(db)`, etc.) para
+que el cambio a Supabase no obligue a reescribir la interfaz.
+
 ## Uso local
-Abrir `src/index.html` en un navegador moderno. No requiere servidor para la versión actual.
+Abrir `src/index.html` en un navegador moderno, o servirlo con
+`python -m http.server 8000 --directory src` y entrar a `http://localhost:8000`.
+El servidor local es recomendable si se usa el cliente de Supabase, porque
+algunos navegadores bloquean peticiones externas desde `file://`.
+
+## Supabase
+- Copiar `src/supabaseClient.example.js` a `src/supabaseClient.js` y rellenar
+  URL y anon key.
+- Ese archivo está en `.gitignore`: **nunca** subir claves ni respaldos.
+- La conexión se inicializa sola y queda disponible en `window.sb`.
+- Todavía no hay tablas ni datos en Supabase; la app sigue usando localStorage.
 
 ## Estado
-- Versión: 2.0 (base)
-- Almacenamiento: localStorage (solo navegador)
+- Versión: 2.1 (capa de datos separada)
+- Almacenamiento: localStorage (solo navegador), aislado tras `AppData`
+- Cliente Supabase: conectado, sin uso todavía
 - Migración prevista a Supabase según PLAN.md
 
 ## Licencia
