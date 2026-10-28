@@ -1,0 +1,11 @@
+{
+  "name": "sistema-calidad-pruebas",
+  "private": true,
+  "description": "Pruebas simuladas (jsdom) de los flujos principales de la app",
+  "scripts": {
+    "test": "node flujos.test.js"
+  },
+  "devDependencies": {
+    "jsdom": "^30.1.3"
+  }
+}
