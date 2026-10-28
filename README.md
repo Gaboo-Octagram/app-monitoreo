@@ -3,6 +3,7 @@
 App web vanilla (HTML/CSS/JS) para control de auditorías e inspecciones en supermercados. Datos guardados en localStorage en la versión actual (v2). En futuras fases se migrará a Supabase con autenticación, roles y permisos.
 
 ## Características (v2)
+- Acceso opcional con cuenta de Supabase; se puede trabajar sin conexión
 - Auditorías por área con checks de Limpieza/Orden y evaluación de trabajadores
 - Validación obligatoria de observación/foto en "No conforme"
 - Borradores por área con guardado diferido
@@ -21,6 +22,7 @@ App web vanilla (HTML/CSS/JS) para control de auditorías e inspecciones en supe
 │   ├── styles.css              # Estilos
 │   ├── supabaseClient.js       # Claves reales (NO se sube al repo)
 │   ├── supabaseClient.example.js # Plantilla pública
+│   ├── auth.js                 # Acceso con Supabase (correo y contraseña)
 │   └── data/
 │       ├── provider.js         # Fachada AppData (contrato de datos)
 │       └── local-storage-provider.js # Implementación actual
@@ -46,6 +48,17 @@ AppData.use('localStorage');   // hoy
 Los métodos son asíncronos a propósito (`await AppData.saveDB(db)`, etc.) para
 que el cambio a Supabase no obligue a reescribir la interfaz.
 
+## Acceso
+Al abrir, la app muestra una pantalla para entrar con la cuenta de Supabase
+(correo y contraseña), con la opción **Seguir sin conexión**.
+
+- La sesión se recuerda entre visitas; si se cierra sesión, vuelve la pantalla.
+- Con sesión iniciada, la barra superior muestra el nombre y el rol, y ese botón
+  abre **Mi cuenta** (rol, local, correo y cerrar sesión).
+- La lógica está en `src/auth.js`, separada de las auditorías.
+- **Todavía no aplica permisos**: los roles se harán efectivos cuando la app
+  lea y escriba en Supabase. Hasta entonces los datos siguen en el navegador.
+
 ## Uso local
 Abrir `src/index.html` en un navegador moderno, o servirlo con
 `python -m http.server 8000 --directory src` y entrar a `http://localhost:8000`.
@@ -63,11 +76,12 @@ algunos navegadores bloquean peticiones externas desde `file://`.
 - Para repetir la prueba del esquema: `tests/schema/` (ver su README).
 
 ## Estado
-- Versión: 2.2 (esquema de base diseñado y validado)
+- Versión: 2.3 (acceso con Supabase)
 - Almacenamiento: localStorage (solo navegador), aislado tras `AppData`
-- Cliente Supabase: conectado, sin uso todavía
-- Esquema SQL: diseñado y probado en PGlite, pendiente de ejecutar en Supabase
-- Migración prevista a Supabase según PLAN.md
+- Cliente Supabase: conectado; ya permite iniciar sesión y muestra el rol
+- Base de datos: tablas, permisos y Storage creados en el proyecto real
+- Esquema SQL: validado con 36 comprobaciones (`tests/schema/`)
+- Siguiente: leer y escribir las auditorías en Supabase
 
 ## Licencia
 Sin licencia. Todos los derechos reservados.

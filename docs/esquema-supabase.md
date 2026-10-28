@@ -3,9 +3,10 @@
 Este documento explica, en lenguaje simple, qué contiene `docs/schema.sql`: el
 "plano" de la base de datos que usará la app cuando dejemos localStorage.
 
-> **Importante:** el archivo todavía **no se ejecutó** en Supabase. La app sigue
-> guardando todo en el navegador. Esto es solo el diseño, ya probado en un
-> PostgreSQL de prueba.
+> **Estado:** el archivo **ya se ejecutó** en el proyecto real de Supabase
+> (16 tablas, permisos, Storage y datos iniciales). La app, por ahora, sigue
+> guardando las auditorías en el navegador: falta conectar la lectura y la
+> escritura.
 
 ---
 
@@ -160,7 +161,10 @@ select public.create_store_with_defaults('Supermercado Centro');
 
 ---
 
-## 6. Cómo ejecutarlo en Supabase (cuando toque)
+## 6. Cómo ejecutarlo en Supabase (referencia)
+
+> Ya está aplicado en el proyecto. Estos pasos sirven si hay que recrear la
+> base en otro proyecto o revisar el proceso.
 
 1. Entrar al proyecto en <https://supabase.com>.
 2. Menú **SQL Editor** → **New query**.
@@ -231,7 +235,9 @@ python -m http.server 8000
 
 ## 9. Qué falta para conectar la app
 
-1. **Pantalla de inicio de sesión** (correo y contraseña) y cierre de sesión.
+1. ~~Pantalla de inicio de sesión~~ — **hecha** (`src/auth.js`): correo y
+   contraseña, sesión recordada, nombre y rol, y opción "Seguir sin conexión".
+   Todavía no aplica permisos porque los datos son locales.
 2. **Proveedor `supabase-provider.js`** que cumpla el mismo contrato que
    `AppData` y se active con `AppData.use('supabase')`.
 3. **Adaptar `app.js`** a las diferencias: hoy guarda todo el estado de una vez
