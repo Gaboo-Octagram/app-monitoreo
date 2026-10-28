@@ -43,6 +43,12 @@ Actualizado: 28-10-2026. Estado actual: versión 2 funcionando, con datos guarda
   historial con pausa al escribir.
 - **Exportar CSV:** botón en Historial que descarga las auditorías filtradas
   con separador `;`, tildes correctas y comillas escapadas.
+- **Primer guardado en la nube:** `src/data/supabase-write.js` sube la
+  auditoría guardada (como borrador), con sus áreas, checks, ausencias y fotos
+  a Storage. El navegador sigue siendo la copia principal: si no hay sesión o
+  internet, se reintenta al entrar o desde **Mi cuenta → Subir pendientes**.
+  Si la auditoría ya fue enviada en la nube, no se modifica; al borrarla en el
+  Historial también se borra su copia en borrador.
 
 ### Pendiente
 - Fase 1: escribir las auditorías en Supabase (guardado por partes), permisos

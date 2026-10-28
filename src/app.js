@@ -396,6 +396,30 @@ function mergeResult(old, nw) {
   return merged;
 }
 
+/* Sube la auditoría a la nube después de guardarla aquí. Si algo falla,
+   la copia del navegador ya está a salvo: solo se avisa. */
+async function syncToCloud(aud) {
+  if (!window.SupabaseWrite) return { skipped: 'sin-cliente' };
+  try {
+    const r = await SupabaseWrite.saveAudit(aud, db);
+    if (r && r.ok) {
+      aud.cloudId = r.auditId;
+      aud.cloudSyncedAt = new Date().toISOString();
+      try { await AppData.saveDB(db); } catch (e) { /* la copia local ya existe */ }
+      if (r.failedPhotos) toast(`No se ${plural(r.failedPhotos, 'pudo', 'pudieron')} subir ${r.failedPhotos} ${plural(r.failedPhotos, 'foto', 'fotos')}.`, 'error');
+      else toast(`También en la nube (${r.entries} ${plural(r.entries, 'check', 'checks')}${r.photos ? ` · ${r.photos} ${plural(r.photos, 'foto', 'fotos')}` : ''}).`);
+    } else if (r && r.skipped === 'enviada') {
+      toast('En la nube esta auditoría ya fue enviada; no se modificó.');
+    } else if (r && r.skipped === 'rol') {
+      toast('Tu rol no crea auditorías: quedó guardada en este navegador.');
+    }
+    return r || {};
+  } catch (e) {
+    toast(`Guardada en este navegador, pero no se pudo subir a la nube: ${e.message || 'error de conexión'}`, 'error');
+    return { error: e.message || 'error' };
+  }
+}
+
 async function saveAudit() {
   const models = db.areas.map(areaModel);
   if (!models.some(m => m.touched)) return toast('Aún no has evaluado nada.', 'error');
@@ -436,6 +460,7 @@ async function saveAudit() {
   saveDraftsSoon.cancel(); drafts = {}; await saveDrafts(); ui.openAreas = new Set(); ui.init = false;
   render();
   toast('Auditoría guardada en el Historial.');
+  await syncToCloud(aud);
 }
 
 /* =====================================================================
@@ -949,10 +974,6 @@ async function removeSample() {
   await save(); render(true); toast('Datos de ejemplo eliminados.');
 }
 
-function download(name, href) {
-  const a = document.createElement('a'); a.href = href; a.download = name; document.body.appendChild(a); a.click(); a.remove();
-}
-
 /* =====================================================================
    ENRUTADOR Y RENDER
    ===================================================================== */
@@ -1013,9 +1034,18 @@ document.addEventListener('click', async e => {
     case 'toggle-day': ui.openDays.has(id) ? ui.openDays.delete(id) : ui.openDays.add(id); $('#histList').innerHTML = histListHTML(); break;
     case 'toggle-obs': ui.closedObs.has(el.dataset.key) ? ui.closedObs.delete(el.dataset.key) : ui.closedObs.add(el.dataset.key); $('#histList').innerHTML = histListHTML(); break;
     case 'edit-aud': editAuditModal(id); break;
-    case 'del-aud':
-      if (await confirmBox('¿Eliminar esta auditoría del Historial? No se puede deshacer.', 'Eliminar', true)) { db.audits = db.audits.filter(r => r.id !== id); await save(); render(true); toast('Auditoría eliminada.'); }
+    case 'del-aud': {
+      const target = db.audits.find(r => r.id === id);
+      if (await confirmBox('¿Eliminar esta auditoría del Historial? No se puede deshacer.', 'Eliminar', true)) {
+        db.audits = db.audits.filter(r => r.id !== id);
+        await save(); render(true); toast('Auditoría eliminada.');
+        if (target && window.SupabaseWrite) {
+          SupabaseWrite.removeAudit(target).catch(() =>
+            toast('Se eliminó en este navegador, pero no se pudo borrar de la nube.', 'error'));
+        }
+      }
       break;
+    }
     case 'hist-clear': ui.hist = { q: '', area: '', from: '', to: '', only: '' }; render(true); break;
     case 'export-csv': exportCsv(); break;
     /* Resumen */
@@ -1144,6 +1174,36 @@ function flushOnExit() {
 window.addEventListener('pagehide', flushOnExit);
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushOnExit(); });
 
+/* ---------- Reintento hacia la nube ----------
+   Si una auditoría quedó sin subir (sin internet, sin sesión o un error
+   pasajero), se vuelve a intentar al abrir la app y al iniciar sesión.
+   No bloquea nada: si sigue sin poder, se reintenta más adelante. */
+const pendingSync = () => db.audits.filter(a => !a.cloudSyncedAt && !a.cloudSkipped);
+
+async function syncPending(limit = 5) {
+  if (!window.SupabaseWrite) return { synced: 0, pending: 0 };
+  let synced = 0;
+  for (const aud of pendingSync().slice(-limit)) {
+    let r;
+    try { r = await SupabaseWrite.saveAudit(aud, db); }
+    catch (e) { break; }
+    if (r && r.ok) { aud.cloudId = r.auditId; aud.cloudSyncedAt = new Date().toISOString(); delete aud.cloudSkipped; synced++; }
+    else if (r && ['enviada', 'rol', 'sin-local'].includes(r.skipped)) aud.cloudSkipped = r.skipped;
+    else break;
+  }
+  if (synced) { try { await AppData.saveDB(db); } catch (e) { /* queda en memoria */ } }
+  return { synced, pending: pendingSync().length };
+}
+
+window.SCSync = { pending: syncPending, count: () => pendingSync().length };
+
+/* Al entrar con una cuenta, se sube lo que haya quedado pendiente. */
+if (window.sb && sb.auth && sb.auth.onAuthStateChange) {
+  sb.auth.onAuthStateChange((event, session) => {
+    if (session) setTimeout(() => syncPending().catch(() => {}), 1200);
+  });
+}
+
 /* ---------- Arranque ---------- */
 async function boot() {
   try {
@@ -1155,6 +1215,7 @@ async function boot() {
   }
   if (!location.hash) location.hash = '#/inicio';
   render();
+  syncPending().catch(() => {});
 }
 boot();
 

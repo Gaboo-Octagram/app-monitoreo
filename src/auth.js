@@ -233,7 +233,10 @@
                   <strong>Datos en la nube</strong>
                   <p class="cloud-msg" id="cloudMsg">Comprueba que la app puede leer tu local desde Supabase.</p>
                 </div>
-                <button class="btn sm" type="button" id="cloudCheck">Comprobar</button>
+                <div class="cloud-btns">
+                  <button class="btn sm" type="button" id="cloudCheck">Comprobar</button>
+                  <button class="btn sm" type="button" id="cloudSync" hidden>Subir pendientes</button>
+                </div>
               </div>
             </div>
           </div>
@@ -267,6 +270,13 @@
     const cloudBtn = modal.querySelector('#cloudCheck');
     if (cloudBtn) cloudBtn.addEventListener('click', () => runCloudCheck(cloudBtn));
 
+    const syncBtn = modal.querySelector('#cloudSync');
+    if (syncBtn) {
+      const pending = window.SCSync ? SCSync.count() : 0;
+      if (pending) { syncBtn.hidden = false; syncBtn.textContent = `Subir pendientes (${pending})`; }
+      syncBtn.addEventListener('click', () => runCloudSync(syncBtn));
+    }
+
     modal.querySelector('#accountClose').focus();
   }
 
@@ -296,8 +306,34 @@
     return (r.store ? r.store + ': ' : '') + parts.join(' · ') + '. ' + audits + '.';
   }
 
-  async function runCloudCheck(btn) {
-    if (!window.SupabaseRead) {
+  /* Sube las auditorías que quedaron sin nube (sin conexión o sin sesión). */
+  async function runCloudSync(btn) {
+    if (!window.SCSync) { cloudMessage('No disponible. Recarga la página.', 'bad'); return; }
+    const label = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Subiendo…';
+    try {
+      const r = await window.SCSync.pending();
+      const left = r.pending || 0;
+      if (r.synced) {
+        cloudMessage(`Se ${r.synced === 1 ? 'subió 1 auditoría' : `subieron ${r.synced} auditorías`}.` +
+          (left ? ` Quedan ${left} pendientes.` : ' Todo al día.'), 'ok');
+      } else {
+        cloudMessage(left
+          ? `No se pudo subir. Quedan ${left} pendientes: revisa la conexión o vuelve a entrar.`
+          : 'No había nada pendiente.', left ? 'bad' : '');
+      }
+      btn.hidden = !left;
+      btn.textContent = left ? `Subir pendientes (${left})` : 'Subir pendientes';
+    } catch (e) {
+      cloudMessage(e.message || 'No se pudieron subir las auditorías pendientes.', 'bad');
+      btn.textContent = label;
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  async function runCloudCheck(btn) {    if (!window.SupabaseRead) {
       cloudMessage('La comprobación no está disponible. Recarga la página.', 'bad');
       return;
     }

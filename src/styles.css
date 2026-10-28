@@ -335,6 +335,7 @@ tr.invalid td{box-shadow:none;background:var(--nok-soft)}
 .cloud-msg.ok{color:#8fe3c2}
 .cloud-msg.bad{color:#ffb4b8}
 .cloud-head .btn{flex:none}
+.cloud-btns{display:flex;flex-direction:column;gap:6px;flex:none}
 
 @media (max-width:640px){
   .login-card{padding:22px 18px 16px}

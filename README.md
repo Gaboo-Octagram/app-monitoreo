@@ -51,6 +51,19 @@ Los archivos de `lib/`, `data/` y `features/` se cargan con `<script>` normal
 antes de `app.js`, sin módulos ES: así la app sigue abriéndose con doble clic
 (`file://`). Cada archivo agrupa una responsabilidad y no guarda estado propio.
 
+## Guardado en la nube (en prueba)
+Al guardar una auditoría, la app sigue escribiendo la copia del navegador y
+además intenta subirla a Supabase (`src/data/supabase-write.js`):
+
+- Se sube como **borrador**; si ya existe una del mismo día, se reemplaza.
+- Si la auditoría ya fue enviada o revisada en la nube, no se toca.
+- Las fotos van a Storage en `<local>/<auditoría>/<check>/n.jpg`.
+- Sin sesión o sin internet no pasa nada: queda guardada en el navegador y se
+  reintenta al iniciar sesión, al abrir la app o desde **Mi cuenta → Subir
+  pendientes**.
+- Los nombres de áreas, checks, parámetros y trabajadores se enlazan con el
+  catálogo de la nube; si alguno no coincide, se conserva el texto evaluado.
+
 ## Capa de datos
 La app **no** llama a `localStorage` directamente: todo pasa por `AppData`
 (`src/data/provider.js`). El proveedor activo se elige en una sola línea de
@@ -98,12 +111,12 @@ algunos navegadores bloquean peticiones externas desde `file://`.
 - Para repetir la prueba del esquema: `tests/schema/` (ver su README).
 
 ## Estado
-- Versión: 2.5 (código dividido, mejoras de interfaz y exportar CSV)
-- Almacenamiento: localStorage (solo navegador), aislado tras `AppData`
+- Versión: 2.6 (primer guardado en la nube, en prueba)
+- Almacenamiento: localStorage (copia principal) + copia en Supabase al guardar
 - Cliente Supabase: conectado; inicio de sesión, rol y lectura del catálogo
 - Base de datos: tablas, permisos y Storage creados en el proyecto real
 - Esquema SQL: validado con 36 comprobaciones (`tests/schema/`)
-- Siguiente: escribir en Supabase (auditorías, fotos e informes)
+- Siguiente: probar la subida con una cuenta real y definir el envío a revisión
 
 ## Licencia
 Sin licencia. Todos los derechos reservados.
