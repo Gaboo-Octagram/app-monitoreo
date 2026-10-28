@@ -31,6 +31,18 @@ Actualizado: 28-10-2026. Estado actual: versión 2 funcionando, con datos guarda
   parámetros, trabajadores y auditorías del local, y los cuenta en
   "Mi cuenta → Datos en la nube". Solo lee: la app sigue guardando en el
   navegador.
+- **Código dividido en módulos:** `src/lib/` (utilidades, constantes, fotos),
+  `src/data/model.js` (estructura y migración de datos) y `src/features/`
+  (informe y CSV). `app.js` quedó con el estado, las vistas y los eventos.
+- **Datos más livianos:** los borradores se escriben agrupados cada 400 ms (y
+  al guardar, cambiar de pantalla o cerrar la pestaña), para no reescribir
+  varios MB en cada clic. Aviso "Guardado" y contador de espacio usado.
+- **Mejoras de interfaz:** foco visible al usar teclado, diálogos que atrapan
+  el foco y lo devuelven al cerrar, Escape cierra, toasts animados (respetando
+  "reducir movimiento"), barra de guardar fija en el teléfono y búsqueda del
+  historial con pausa al escribir.
+- **Exportar CSV:** botón en Historial que descarga las auditorías filtradas
+  con separador `;`, tildes correctas y comillas escapadas.
 
 ### Pendiente
 - Fase 1: escribir las auditorías en Supabase (guardado por partes), permisos

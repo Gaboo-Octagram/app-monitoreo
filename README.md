@@ -6,34 +6,50 @@ App web vanilla (HTML/CSS/JS) para control de auditorías e inspecciones en supe
 - Acceso opcional con cuenta de Supabase; se puede trabajar sin conexión
 - Auditorías por área con checks de Limpieza/Orden y evaluación de trabajadores
 - Validación obligatoria de observación/foto en "No conforme"
-- Borradores por área con guardado diferido
+- Borradores por área con guardado diferido (se agrupan y se escriben al cerrar)
+- Aviso "Guardado" en la barra superior y contador de espacio usado
 - Merge de auditorías si ya existe una del mismo día
-- Historial con filtros, edición desde historial (en v2) y resumen con gráficas
+- Historial con filtros, búsqueda rápida, edición desde historial y resumen con gráficas
+- Exportar el historial filtrado a CSV (se abre en Excel)
 - Generación de informes imprimibles/PDF
 - Gestión de áreas, trabajadores, jefes, checklists, parámetros y archivos
 - Compresión de fotos en cliente
+- Interfaz usable con teclado: foco visible, diálogos que atrapan el foco y Escape para cerrar
 
 ## Estructura
 ```
 /
 ├── src/
 │   ├── index.html              # Página principal (orden de carga de scripts)
-│   ├── app.js                  # Lógica y vistas de la app
+│   ├── app.js                  # Estado, vistas y eventos de la app
 │   ├── styles.css              # Estilos
 │   ├── supabaseClient.js       # Claves reales (NO se sube al repo)
 │   ├── supabaseClient.example.js # Plantilla pública
 │   ├── auth.js                 # Acceso con Supabase (correo y contraseña)
-│   └── data/
-│       ├── provider.js         # Fachada AppData (contrato de datos)
-│       └── local-storage-provider.js # Implementación actual
+│   ├── lib/
+│   │   ├── util.js             # Funciones puras (texto, fechas, descargas)
+│   │   ├── constants.js        # Etiquetas, colores e iconos
+│   │   └── photos.js           # Compresión de fotos y miniaturas
+│   ├── data/
+│   │   ├── model.js            # Estructura de los datos, valores iniciales y migración
+│   │   ├── provider.js         # Fachada AppData (contrato de datos)
+│   │   ├── local-storage-provider.js # Implementación actual
+│   │   └── supabase-read.js    # Lectura desde Supabase (solo consulta)
+│   └── features/
+│       ├── report.js           # Informe imprimible/PDF
+│       └── csv.js              # Armar y descargar CSV
 ├── tests/      # Pruebas simuladas
 │   └── schema/ # Prueba del esquema SQL en PGlite
 ├── docs/
-│   ├── schema.sql            # Esquema para Supabase (sin ejecutar todavía)
+│   ├── schema.sql            # Esquema para Supabase (ya aplicado)
 │   └── esquema-supabase.md   # Explicación del esquema en lenguaje simple
 ├── PLAN.md     # Plan de trabajo
 └── README.md
 ```
+
+Los archivos de `lib/`, `data/` y `features/` se cargan con `<script>` normal
+antes de `app.js`, sin módulos ES: así la app sigue abriéndose con doble clic
+(`file://`). Cada archivo agrupa una responsabilidad y no guarda estado propio.
 
 ## Capa de datos
 La app **no** llama a `localStorage` directamente: todo pasa por `AppData`
@@ -82,7 +98,7 @@ algunos navegadores bloquean peticiones externas desde `file://`.
 - Para repetir la prueba del esquema: `tests/schema/` (ver su README).
 
 ## Estado
-- Versión: 2.4 (lectura de Supabase)
+- Versión: 2.5 (código dividido, mejoras de interfaz y exportar CSV)
 - Almacenamiento: localStorage (solo navegador), aislado tras `AppData`
 - Cliente Supabase: conectado; inicio de sesión, rol y lectura del catálogo
 - Base de datos: tablas, permisos y Storage creados en el proyecto real
