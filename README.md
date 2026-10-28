@@ -25,7 +25,10 @@ App web vanilla (HTML/CSS/JS) para control de auditorías e inspecciones en supe
 │       ├── provider.js         # Fachada AppData (contrato de datos)
 │       └── local-storage-provider.js # Implementación actual
 ├── tests/      # Pruebas simuladas
-├── docs/       # Documentación/imágenes de referencia
+│   └── schema/ # Prueba del esquema SQL en PGlite
+├── docs/
+│   ├── schema.sql            # Esquema para Supabase (sin ejecutar todavía)
+│   └── esquema-supabase.md   # Explicación del esquema en lenguaje simple
 ├── PLAN.md     # Plan de trabajo
 └── README.md
 ```
@@ -55,11 +58,15 @@ algunos navegadores bloquean peticiones externas desde `file://`.
 - Ese archivo está en `.gitignore`: **nunca** subir claves ni respaldos.
 - La conexión se inicializa sola y queda disponible en `window.sb`.
 - Todavía no hay tablas ni datos en Supabase; la app sigue usando localStorage.
+- El diseño de la base está en `docs/schema.sql`, explicado en
+  `docs/esquema-supabase.md`. **No se ejecutó todavía.**
+- Para repetir la prueba del esquema: `tests/schema/` (ver su README).
 
 ## Estado
-- Versión: 2.1 (capa de datos separada)
+- Versión: 2.2 (esquema de base diseñado y validado)
 - Almacenamiento: localStorage (solo navegador), aislado tras `AppData`
 - Cliente Supabase: conectado, sin uso todavía
+- Esquema SQL: diseñado y probado en PGlite, pendiente de ejecutar en Supabase
 - Migración prevista a Supabase según PLAN.md
 
 ## Licencia

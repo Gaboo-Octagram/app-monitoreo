@@ -4,7 +4,9 @@
 *.bak
 *.backup
 *.zip
+# Los volcados de datos no se suben; el esquema sí es código del proyecto.
 *.sql
+!docs/schema.sql
 
 # Fotos / archivos subidos
 *.jpg

@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="es">
+<head><meta charset="utf-8"><title>Validar docs/schema.sql</title></head>
+<body>
+<pre id="out">cargando…</pre>
+<script type="module">
+import { PGlite } from 'https://cdn.jsdelivr.net/npm/@electric-sql/pglite@0.5.13/dist/index.js';
+
+window.PGlite = PGlite;
+window.ready = false;
+
+window.runTest = async () => {
+  const log = [];
+  const ok = (m) => log.push('OK   ' + m);
+  const bad = (m) => log.push('FALLA ' + m);
+
+  const db = await PGlite.create();
+
+  const stubs = `
+    create role anon nologin;
+    create role authenticated nologin;
+
+    create schema auth;
+    create table auth.users (
+      id uuid primary key default gen_random_uuid(),
+      email text,
+      raw_user_meta_data jsonb default '{}'::jsonb
+    );
+    create function auth.uid() returns uuid language sql stable as $$
+      select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid
+    $$;
+
+    create schema storage;
+    create table storage.buckets (
+      id text primary key,
+      name text not null,
+      public boolean not null default false,
+      file_size_limit bigint,
+      allowed_mime_types text[]
+    );
+    create table storage.objects (
+      id uuid primary key default gen_random_uuid(),
+      bucket_id text references storage.buckets(id),
+      name text,
+      owner uuid,
+      created_at timestamptz not null default now()
+    );
+    create function storage.foldername(name text) returns text[]
+      language sql immutable as $$ select string_to_array(name, '/') $$;
+    grant usage on schema storage to authenticated, anon;
+    grant all on storage.buckets to authenticated;
+    grant select, insert, update, delete on storage.objects to authenticated;
+    alter table storage.objects enable row level security;
+    alter table storage.buckets enable row level security;
+  `;
+
+  await db.exec(stubs);
+  ok('stubs auth/storage');
+
+  let schema = await (await fetch('../../docs/schema.sql')).text();
+  schema = schema.replace('create extension if not exists pgcrypto;', '');
+  await db.exec(schema);
+  ok('schema.sql completo (tablas, RLS, triggers, funciones)');
+
+  // ---------- estructura ----------
+  const t = await db.query(`select count(*)::int n from pg_tables where schemaname='public'`);
+  const r = await db.query(`select count(*)::int n from pg_tables where schemaname='public' and rowsecurity`);
+  const p = await db.query(`select count(*)::int n from pg_policies where schemaname='public'`);
+  log.push(`tablas public=${t.rows[0].n} conRLS=${r.rows[0].n} políticas=${p.rows[0].n}`);
+  t.rows[0].n === 16 && r.rows[0].n === 16 ? ok('16 tablas, todas con RLS') : bad('tablas/RLS inesperados');
+
+  // ---------- datos iniciales ----------
+  const s = await db.query(`select public.create_store_with_defaults('Supermercado Centro') id`);
+  const store = s.rows[0].id;
+  const c = await db.query(`
+    select
+      (select count(*)::int from public.areas where store_id=$1) areas,
+      (select count(*)::int from public.checklist_blocks b join public.areas a on a.id=b.area_id where a.store_id=$1) bloques,
+      (select count(*)::int from public.checklist_items i join public.checklist_blocks b on b.id=i.block_id join public.areas a on a.id=b.area_id where a.store_id=$1) items,
+      (select count(*)::int from public.hygiene_params where store_id=$1) params
+  `, [store]);
+  const cc = c.rows[0];
+  log.push(`datos iniciales: ${cc.areas} áreas, ${cc.bloques} bloques, ${cc.items} ítems, ${cc.params} parámetros`);
+  cc.areas === 7 && cc.bloques === 14 && cc.items === 70 && cc.params === 6
+    ? ok('catálogo por defecto correcto')
+    : bad('catálogo por defecto incompleto');
+
+  // ---------- usuarios ----------
+  const ADMIN  = '11111111-1111-1111-1111-111111111111';
+  const MON1   = '22222222-2222-2222-2222-222222222222';
+  const MON2   = '33333333-3333-3333-3333-333333333333';
+  const JEFA   = '44444444-4444-4444-4444-444444444444';
+  await db.exec(`
+    insert into auth.users (id, email, raw_user_meta_data) values
+      ('${ADMIN}', 'admin@demo.test', '{"full_name":"Admin Demo"}'),
+      ('${MON1}',  'mon1@demo.test',  '{"full_name":"Monitora Uno"}'),
+      ('${MON2}',  'mon2@demo.test',  '{"full_name":"Monitora Dos"}'),
+      ('${JEFA}',  'jefa@demo.test',  '{"full_name":"Jefa Calidad"}');
+  `);
+  const prof = await db.query(`select id, role, store_id, full_name from public.profiles order by created_at`);
+  log.push('perfiles creados por trigger: ' + prof.rows.map(x => x.full_name + '=' + x.role).join(', '));
+  prof.rows.length === 4 ? ok('alta automática de perfiles') : bad('no se crearon los 4 perfiles');
+  prof.rows.find(x => x.id === ADMIN)?.role === 'administrador'
+    ? ok('primer usuario = administrador') : bad('el primer usuario no es administrador');
+
+  // La jefa se asigna desde una sesión de administrador (el trigger de
+  // perfiles impide que un usuario se cambie el rol a sí mismo).
+  await db.exec(`
+    select set_config('request.jwt.claim.sub', '${ADMIN}', false);
+    set role authenticated;
+    update public.profiles set role='jefa_calidad' where id='${JEFA}';
+    reset role;
+    select set_config('request.jwt.claim.sub', '', false);
+  `);
+  const roleJefa = await db.query(`select role from public.profiles where id=$1`, [JEFA]);
+  roleJefa.rows[0].role === 'jefa_calidad'
+    ? ok('el administrador asigna el rol de jefa de calidad')
+    : bad('no se pudo asignar el rol de jefa (quedó ' + roleJefa.rows[0].role + ')');
+  const st = await db.query(`select count(*)::int n from public.profiles where store_id='${store}'`);
+  st.rows[0].n === 4 ? ok('todos los perfiles quedaron en el local') : bad('perfiles sin local');
+
+  // ---------- helpers de sesión ----------
+  const as = async (id) => {
+    await db.exec(`reset role;`);
+    await db.exec(`select set_config('request.jwt.claim.sub', '${id}', false)`);
+    await db.exec(`set role authenticated`);
+  };
+  const asAnon = async () => {
+    await db.exec(`reset role;`);
+    await db.exec(`select set_config('request.jwt.claim.sub', '', false)`);
+    await db.exec(`set role anon`);
+  };
+  const reset = async () => {
+    await db.exec(`reset role;`);
+    await db.exec(`select set_config('request.jwt.claim.sub', '', false)`);
+  };
+  const count = async (sql, params) => (await db.query(sql, params)).rows[0].n;
+  const shouldFail = async (label, sql, params) => {
+    try { await db.query(sql, params); bad(label + ' (debía fallar y no falló)'); }
+    catch (e) { ok(label + ' → bloqueado: ' + String(e.message).split('\n')[0].slice(0, 90)); }
+  };
+  const shouldPass = async (label, sql, params) => {
+    try { const x = await db.query(sql, params); ok(label); return x; }
+    catch (e) { bad(label + ' → ' + String(e.message).split('\n')[0].slice(0, 140)); return null; }
+  };
+  // Para UPDATE/DELETE que RLS filtra en silencio: se comprueba cuántas filas cambió.
+  const expectRows = async (label, sql, params, expected) => {
+    try {
+      const n = (await db.query(sql, params)).rows[0].n;
+      n === expected ? ok(label + ' (' + n + ' filas)') : bad(label + ' → ' + n + ' filas, se esperaban ' + expected);
+      return n;
+    } catch (e) { bad(label + ' → ' + String(e.message).split('\n')[0].slice(0, 140)); return null; }
+  };
+
+  // ---------- monitora: crea su auditoría ----------
+  await as(MON1);
+  const audit = '55555555-5555-5555-5555-555555555555';
+  await shouldPass('monitora crea auditoría en borrador',
+    `insert into public.audits (id, store_id, audit_date, status, evaluator_name, created_by)
+     values ($1, $2, current_date, 'submitted', 'Intento falso', $3)`,
+    [audit, store, ADMIN]);
+  const a1 = await db.query(`select store_id, status, created_by, evaluator_id from public.audits where id=$1`, [audit]);
+  const row = a1.rows[0];
+  row && row.store_id === store && row.status === 'draft' && row.created_by === MON1 && row.evaluator_id === MON1
+    ? ok('el trigger corrige local, dueño y estado al crear')
+    : bad('el trigger no normalizó la auditoría: ' + JSON.stringify(row));
+
+  await shouldPass('monitora agrega resultado de área',
+    `with ins as (
+       insert into public.audit_area_results (id, audit_id, area_name, total_items, done_items)
+       values ('66666666-6666-6666-6666-666666666666', $1, 'Panadería', 10, 8) returning 1
+     ) select count(*)::int n from ins`, [audit]);
+  await shouldPass('monitora agrega bloque evaluado',
+    `with ins as (
+       insert into public.audit_blocks (id, area_result_id, block_type, label)
+       values ('77777777-7777-7777-7777-777777777777', '66666666-6666-6666-6666-666666666666', 'limpieza', 'Check Limpieza') returning 1
+     ) select count(*)::int n from ins`);
+  await shouldPass('monitora agrega ítem evaluado',
+    `with ins as (
+       insert into public.audit_entries (id, block_id, item_text, status, observation)
+       values ('88888888-8888-8888-8888-888888888888', '77777777-7777-7777-7777-777777777777', 'Pisos limpios', 'ok', '') returning 1
+     ) select count(*)::int n from ins`);
+  await shouldPass('monitora agrega foto (fila en la base)',
+    `with ins as (
+       insert into public.audit_photos (entry_id, storage_path)
+       values ('88888888-8888-8888-8888-888888888888', $1 || '/' || $2 || '/foto.jpg') returning 1
+     ) select count(*)::int n from ins`, [store, audit]);
+  await shouldPass('monitora sube foto al depósito correcto',
+    `with ins as (
+       insert into storage.objects (bucket_id, name, owner)
+       values ('audit-photos', $1 || '/' || $2 || '/foto.jpg', $3) returning 1
+     ) select count(*)::int n from ins`, [store, audit, MON1]);
+  await shouldFail('monitora NO sube foto con ruta de otro local',
+    `insert into storage.objects (bucket_id, name, owner)
+     values ('audit-photos', 'otro-local/' || $1 || '/foto.jpg', $2)`, [audit, MON1]);
+
+  const visibleMon1 = await count(`select count(*)::int n from public.audits`);
+  visibleMon1 === 1 ? ok('monitora ve su auditoría') : bad('monitora no ve su auditoría (n=' + visibleMon1 + ')');
+
+  // ---------- otra monitora no la ve ----------
+  await as(MON2);
+  const visibleMon2 = await count(`select count(*)::int n from public.audits`);
+  visibleMon2 === 0 ? ok('otra monitora NO ve la auditoría ajena') : bad('otra monitora ve la auditoría ajena (n=' + visibleMon2 + ')');
+  await expectRows('otra monitora NO edita la auditoría ajena',
+    `with upd as (update public.audits set notes='intruso' where id=$1 returning 1)
+     select count(*)::int n from upd`, [audit], 0);
+  const photosMon2 = await count(`select count(*)::int n from storage.objects where bucket_id='audit-photos'`);
+  photosMon2 === 0 ? ok('otra monitora NO ve las fotos') : bad('otra monitora ve fotos ajenas (n=' + photosMon2 + ')');
+
+  // ---------- jefa: revisa, no edita ----------
+  await as(JEFA);
+  const visibleJefa = await count(`select count(*)::int n from public.audits`);
+  visibleJefa === 1 ? ok('jefa de calidad ve la auditoría') : bad('jefa no ve la auditoría (n=' + visibleJefa + ')');
+  await expectRows('jefa NO modifica el borrador de la monitora',
+    `with upd as (update public.audits set notes='cambio' where id=$1 returning 1)
+     select count(*)::int n from upd`, [audit], 0);
+  await shouldFail('jefa NO agrega ítems evaluados',
+    `insert into public.audit_entries (block_id, item_text, status)
+     values ('77777777-7777-7777-7777-777777777777', 'Inventado', 'ok')`);
+
+  await as(MON1);
+  await expectRows('monitora envía la auditoría',
+    `with upd as (update public.audits set status='submitted' where id=$1 returning 1)
+     select count(*)::int n from upd`, [audit], 1);
+  await expectRows('monitora ya no edita una auditoría enviada',
+    `with upd as (update public.audits set notes='tarde' where id=$1 returning 1)
+     select count(*)::int n from upd`, [audit], 0);
+
+  await as(JEFA);
+  await shouldFail('jefa NO puede aprobar sin decisión',
+    `update public.audits set status='reviewed' where id=$1`, [audit]);
+  const notesBefore = (await db.query(`select notes from public.audits where id=$1`, [audit])).rows[0].notes;
+  await expectRows('jefa sí actualiza la revisión, pero no los datos',
+    `with upd as (update public.audits set notes='cambio', status='reviewed',
+                    review_decision='approved', review_notes='Conforme' where id=$1 returning 1)
+     select count(*)::int n from upd`, [audit], 1);
+  const rev = await db.query(`select notes, status, review_decision, reviewed_by, reviewed_at is not null rev from public.audits where id=$1`, [audit]);
+  const rv = rev.rows[0];
+  rv && rv.notes === notesBefore && rv.status === 'reviewed' && rv.review_decision === 'approved' && rv.reviewed_by === JEFA && rv.rev
+    ? ok('revisión registrada con autor y fecha; hallazgos intactos')
+    : bad('revisión incompleta: ' + JSON.stringify(rv));
+
+  await as(MON1);
+  await expectRows('monitora ya no edita una auditoría revisada',
+    `with upd as (update public.audits set notes='reabrir' where id=$1 returning 1)
+     select count(*)::int n from upd`, [audit], 0);
+
+  // ---------- admin ----------
+  await as(ADMIN);
+  const all = await count(`select count(*)::int n from public.audits`);
+  all === 1 ? ok('administrador ve las auditorías del local') : bad('administrador no ve las auditorías (n=' + all + ')');
+  const catalog = await count(`select count(*)::int n from public.areas`);
+  catalog === 7 ? ok('administrador ve el catálogo') : bad('administrador no ve el catálogo (n=' + catalog + ')');
+
+  // ---------- nadie se auto-asciende ----------
+  await as(MON2);
+  await db.query(`update public.profiles set role='administrador', active=true where id=$1`, [MON2]);
+  const self = await db.query(`select role from public.profiles where id=$1`, [MON2]);
+  self.rows[0].role === 'monitora'
+    ? ok('una monitora NO puede cambiarse el rol')
+    : bad('¡una monitora se ascendió a ' + self.rows[0].role + '!');
+  await shouldFail('una monitora NO crea perfiles',
+    `insert into public.profiles (id, store_id, full_name, role)
+     values ('99999999-9999-9999-9999-999999999999', $1, 'Fantasma', 'administrador')`, [store]);
+  await expectRows('una monitora NO edita el perfil de otra',
+    `with upd as (update public.profiles set role='administrador' where id=$1 returning 1)
+     select count(*)::int n from upd`, [JEFA], 0);
+
+  // ---------- anónimo ----------
+  await asAnon();
+  await shouldFail('anónimo NO lee auditorías', `select count(*)::int n from public.audits`);
+  await reset();
+
+  // ---------- resumen ----------
+  const fails = log.filter(x => x.startsWith('FALLA')).length;
+  log.push('');
+  log.push(fails === 0 ? 'RESULTADO: TODO OK' : 'RESULTADO: ' + fails + ' fallas');
+
+  await db.close();
+  return log;
+};
+
+document.getElementById('out').textContent = 'PGlite cargado';
+window.ready = true;
+</script>
+</body>
+</html>
