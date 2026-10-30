@@ -199,7 +199,12 @@ const check = (n, c) => { console.log((c ? 'OK   ' : 'FALLA') + ' ' + n); if (!c
   check('Informe: imprimir', w.__printed === true && !!$('#printArea .report'));
   click(foot(0)); await tick();
   await go('#/historial');
-  check('Historial con datos de ejemplo: varias filas, ordenadas', $$('[data-day]').length > 30);
+  check('Historial agrupado: mes y semana más recientes abiertos, resto cerrado', $$('.grp-month').length >= 2 && $$('.grp-month.open').length === 1 && $$('.grp-week.open').length === 1 && $$('[data-day]').length >= 1 && $$('[data-day]').length < 8);
+  const nWeeks = $$('.grp-week').length;
+  click($$('.grp-month:not(.open) > .grp-head')[0]); await tick();
+  check('Abrir un mes cerrado muestra sus semanas', $$('.grp-week').length > nWeeks);
+  for (let i = 0; i < 12; i++) { const c = $$('.grp:not(.open) > .grp-head')[0]; if (!c) break; click(c); await tick(); }
+  check('Con todo abierto: varias filas, ordenadas', $$('[data-day]').length > 30);
   click($$('[data-action="toggle-day"]')[3]); await tick();
   check('Día de ejemplo muestra tarjetas', $$('.hcard').length >= 7);
   await go('#/config'); click($('[data-tab="general"]')); await tick();

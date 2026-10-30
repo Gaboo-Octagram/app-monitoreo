@@ -340,5 +340,23 @@
     return { ok: true, by: (profile && profile.full_name) || '', note: text };
   }
 
-  window.SupabaseWrite = { saveAudit, removeAudit, saveConformity, uuid };
+  /* Borrado total del historial (solo administrador): función de la base +
+     limpieza de las fotos de Storage. Devuelve cuántas auditorías se borraron. */
+  async function deleteAllAudits(phrase) {
+    const client = sb();
+    if (!client) throw friendly('No hay conexión con la nube.', 'audits');
+    const session = await currentSession(client);
+    if (!session || !session.user) throw friendly('Inicia sesión para continuar.', 'audits');
+    const profile = await currentProfile(client, session.user.id);
+    const { data, error } = await client.rpc('delete_all_audits', { p_confirm: phrase });
+    if (error) throw friendly(error, 'audits');
+    if (profile && profile.store_id) {
+      const bucket = client.storage.from(BUCKET);
+      const { data: dirs } = await bucket.list(profile.store_id, { limit: 1000 });
+      for (const d of dirs || []) await cleanPhotos(client, profile.store_id, d.name).catch(() => {});
+    }
+    return { deleted: Number(data) || 0 };
+  }
+
+  window.SupabaseWrite = { saveAudit, removeAudit, saveConformity, deleteAllAudits, uuid };
 })();

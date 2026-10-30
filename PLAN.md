@@ -65,6 +65,12 @@ Actualizado: 28-10-2026. Estado actual: versión 2 funcionando, con datos guarda
 - Si hay una evaluación a medias, la sincronización espera a que se guarde.
 - Falta: borrado total del historial (admin) y Historial agrupado por mes/semana; probar todo con la base real (validación con los tres roles).
 
+### En curso (rama `fase-2-historial`, incluye las anteriores)
+- **Historial agrupado** en mes → semana → día (el mes y la semana más recientes abiertos; con filtros se abre todo). Cada grupo muestra su cantidad de auditorías y su porcentaje promedio.
+- **Borrado total del historial en la nube** (solo administrador, Configuración → General): descarga un respaldo JSON, pide escribir BORRAR TODO, llama a `delete_all_audits` y limpia las fotos de Storage. El catálogo no se toca.
+- "Borrar todo" local ya no borra el catálogo cuando este viene de la nube.
+- Falta: validación real con los tres roles, publicar (Cloudflare Pages), formato del PDF, listas reales.
+
 ### Pendiente
 - Fase 1: escribir las auditorías en Supabase (guardado por partes), permisos
   por rol en la app y gestión de usuarios desde la interfaz.
