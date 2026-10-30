@@ -29,6 +29,7 @@
 
   const adapters = Object.create(null);
   let active = null;
+  let readOnly = false; // vista de la jefa: nada se guarda en este navegador
 
   const REQUIRED = [
     'loadDB', 'loadLegacyDB', 'saveDB',
@@ -72,13 +73,17 @@
 
     loadDB() { return current().loadDB(); },
     loadLegacyDB() { return current().loadLegacyDB(); },
-    saveDB(db) { return current().saveDB(db); },
+    saveDB(db) { return readOnly ? Promise.resolve() : current().saveDB(db); },
 
     loadDrafts() { return current().loadDrafts(); },
-    saveDrafts(drafts) { return current().saveDrafts(drafts); },
+    saveDrafts(drafts) { return readOnly ? Promise.resolve() : current().saveDrafts(drafts); },
 
     loadFiles() { return current().loadFiles(); },
-    saveFiles(files) { return current().saveFiles(files); },
+    saveFiles(files) { return readOnly ? Promise.resolve() : current().saveFiles(files); },
+
+    /** Con true, los datos de este navegador no se tocan (la jefa solo mira la nube). */
+    setReadOnly(v) { readOnly = !!v; },
+    get readOnly() { return readOnly; },
 
     /** Solo para pruebas: descarta todos los proveedores registrados. */
     _reset() { active = null; Object.keys(adapters).forEach(k => delete adapters[k]); }

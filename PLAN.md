@@ -55,6 +55,11 @@ Actualizado: 28-10-2026. Estado actual: versión 2 funcionando, con datos guarda
 - Antes de aplicarla: desactivar el registro público en Supabase (Authentication → Sign In / Providers) y crear los usuarios desde el panel.
 - Pruebas de la app (`npm test`, 64 comprobaciones) adaptadas a la versión modular; el esquema se prueba con `npm run test:schema`.
 
+### En curso (rama `fase-1-guardado-por-roles`)
+- **Vista de la jefa de calidad:** al entrar con rol `jefa_calidad` ve solo Resumen e Historial, con las auditorías leídas de la nube (fotos con enlace temporal), sin Editar/Eliminar y sin guardar nada en el navegador. Deja su **conformidad diaria** (una observación, hasta 500 caracteres); monitora y administrador la ven en el Historial.
+- Pruebas nuevas: `tests/rol-jefa.test.js` (Supabase simulado). `npm test` corre ambas.
+- Falta: probar con la base real, leer el catálogo desde la nube también para la monitora, guardar los cambios de Configuración en Supabase, borrado total desde la app (admin).
+
 ### Pendiente
 - Fase 1: escribir las auditorías en Supabase (guardado por partes), permisos
   por rol en la app y gestión de usuarios desde la interfaz.

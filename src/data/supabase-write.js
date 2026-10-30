@@ -150,7 +150,6 @@
 
     let auditId = null;
     if (existing) {
-      if (existing.status !== 'draft') return { skipped: 'enviada', status: existing.status };
       const { error: upErr } = await client
         .from('audits')
         .update({
@@ -323,5 +322,23 @@
     return { ok: true, auditId: row.id };
   }
 
-  window.SupabaseWrite = { saveAudit, removeAudit, uuid };
+  /* Conformidad diaria de la jefa: opcional, una sola observación. */
+  async function saveConformity(auditId, note) {
+    const client = sb();
+    if (!client) throw friendly('No hay conexión con la nube.', 'audit_conformity');
+    const session = await currentSession(client);
+    if (!session || !session.user) throw friendly('Inicia sesión para dar la conformidad.', 'audit_conformity');
+    const profile = await currentProfile(client, session.user.id);
+    const text = String(note || '').trim().slice(0, 500);
+    const { error } = await client.from('audit_conformity').upsert({
+      audit_id: auditId,
+      reviewer_id: session.user.id,
+      reviewer_name: (profile && profile.full_name) || '',
+      note: text
+    }, { onConflict: 'audit_id' });
+    if (error) throw friendly(error, 'audit_conformity');
+    return { ok: true, by: (profile && profile.full_name) || '', note: text };
+  }
+
+  window.SupabaseWrite = { saveAudit, removeAudit, saveConformity, uuid };
 })();

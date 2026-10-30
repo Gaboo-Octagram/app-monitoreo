@@ -174,5 +174,87 @@
     return cat;
   }
 
-  window.SupabaseRead = { summary, store, catalog, friendly };
+  /* ---------- Auditorías completas, en el formato que usa la app ----------
+     Las usa la jefa de calidad (no tiene copia local). Las fotos son
+     enlaces firmados temporales (1 hora). Incluye su conformidad, si hay. */
+  const AUDIT_COLUMNS = 'id,audit_date,evaluator_name,goal,created_at,'
+    + 'audit_conformity(note,reviewer_name,updated_at),'
+    + 'audit_area_results(id,area_id,area_name,boss_name,not_evaluated,total_items,done_items,sort_order,'
+    + 'audit_blocks(id,block_type,label,sort_order,'
+    + 'audit_entries(id,item_id,param_id,worker_id,worker_name,item_text,status,observation,created_at,audit_photos(storage_path))),'
+    + 'audit_absences(worker_id,worker_name))';
+
+  const bySort = (a, b) => (a.sort_order || 0) - (b.sort_order || 0);
+  const byCreated = (a, b) => String(a.created_at).localeCompare(String(b.created_at));
+  const one = x => Array.isArray(x) ? (x[0] || null) : (x || null);
+
+  async function audits(limit) {
+    const client = sb();
+    if (!client) throw new Error('No se pudo cargar la conexión con Supabase.');
+    const { data, error } = await client
+      .from('audits')
+      .select(AUDIT_COLUMNS)
+      .order('audit_date', { ascending: false })
+      .limit(limit || 120);
+    if (error) throw friendly(error, 'audits');
+
+    const paths = [];
+    (data || []).forEach(a => (a.audit_area_results || []).forEach(r => (r.audit_blocks || []).forEach(b =>
+      (b.audit_entries || []).forEach(e => (e.audit_photos || []).forEach(p => paths.push(p.storage_path))))));
+
+    const urls = new Map();
+    if (paths.length) {
+      const { data: signed } = await client.storage.from('audit-photos').createSignedUrls(paths, 3600);
+      (signed || []).forEach(x => { if (x && x.signedUrl && x.path) urls.set(x.path, x.signedUrl); });
+    }
+
+    return (data || []).map(a => {
+      const conf = one(a.audit_conformity);
+      const areas = (a.audit_area_results || []).slice().sort(bySort).map(r => {
+        const base = { areaId: r.area_id || r.id, areaName: r.area_name, boss: r.boss_name || '',
+          notEvaluated: !!r.not_evaluated, total: r.total_items || 0, done: r.done_items || 0 };
+        if (r.not_evaluated) return base;
+        const blocks = (r.audit_blocks || []).slice().sort(bySort).map(b => {
+          const isW = b.block_type === 'trabajadores';
+          return {
+            id: b.id, type: b.block_type, label: b.label,
+            entries: (b.audit_entries || []).slice().sort(byCreated).map(e => ({
+              k: e.param_id || e.item_id || e.id, w: e.worker_id || e.worker_name, worker: e.worker_name || '',
+              text: e.item_text, status: e.status, obs: e.observation || '',
+              photos: (e.audit_photos || []).map(p => urls.get(p.storage_path)).filter(Boolean)
+            })),
+            ...(isW ? { absent: (r.audit_absences || []).map(x => ({ id: x.worker_id || x.worker_name, name: x.worker_name })) } : {})
+          };
+        });
+        if (!blocks.some(b => b.type === 'trabajadores') && (r.audit_absences || []).length) {
+          blocks.unshift({ id: 'workers', type: 'trabajadores', label: 'Check Trabajadores', entries: [],
+            absent: r.audit_absences.map(x => ({ id: x.worker_id || x.worker_name, name: x.worker_name })) });
+        }
+        return { ...base, blocks };
+      });
+      return {
+        id: a.id, cloudId: a.id, cloudSyncedAt: a.created_at, date: a.audit_date, ts: a.created_at,
+        evaluator: a.evaluator_name || '', goal: a.goal, areas,
+        conformity: conf ? { note: conf.note || '', by: conf.reviewer_name || '', at: conf.updated_at } : null
+      };
+    });
+  }
+
+  /* Conformidades (fecha → datos), para mostrarlas también a la monitora. */
+  async function conformities() {
+    const client = sb();
+    if (!client) return new Map();
+    const { data, error } = await client
+      .from('audit_conformity')
+      .select('note,reviewer_name,updated_at,audits(audit_date)');
+    if (error) throw friendly(error, 'audit_conformity');
+    const out = new Map();
+    (data || []).forEach(c => {
+      const a = one(c.audits);
+      if (a) out.set(a.audit_date, { note: c.note || '', by: c.reviewer_name || '', at: c.updated_at });
+    });
+    return out;
+  }
+
+  window.SupabaseRead = { summary, store, catalog, audits, conformities, friendly };
 })();

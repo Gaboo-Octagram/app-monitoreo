@@ -49,7 +49,11 @@
     return document.getElementById('accountChip');
   }
 
+  /* La app lee el rol desde acá y se entera de los cambios con el evento "sc-auth". */
+  window.SCAuth = { role: () => (session && profile ? profile.role : null), signedIn: () => !!session };
+
   function renderChip() {
+    try { window.dispatchEvent(new CustomEvent('sc-auth')); } catch (e) { /* sin eventos */ }
     const c = chip();
     if (!c) return;
     c.hidden = false;
