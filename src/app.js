@@ -612,17 +612,22 @@ function dayCardHTML(a, areas) {
     </button>
     ${open ? `<div class="day-body"><div class="hcards">${areas.map(r => histAreaCard(a, r)).join('')}</div>
       ${confHTML(a)}
-      ${headMode ? '' : `<div class="day-actions"><button class="btn sm" data-action="edit-aud" data-id="${a.id}">Editar</button><button class="btn sm danger" data-action="del-aud" data-id="${a.id}">Eliminar</button></div>`}</div>` : ''}
+      ${canEditHistory() ? `<div class="day-actions"><button class="btn sm" data-action="edit-aud" data-id="${a.id}">Editar</button><button class="btn sm danger" data-action="del-aud" data-id="${a.id}">Eliminar</button></div>` : ''}</div>` : ''}
   </article>`;
 }
+
+/* Editar o eliminar un día completo desde el Historial: solo el administrador.
+   (La monitora corrige en Inicio antes de guardar; la jefa solo confirma.)
+   Sin sesión (modo local de este navegador) se mantiene como antes. */
+const canEditHistory = () => !headMode && (authRole === null || authRole === 'administrador');
 
 /* Conformidad diaria de la jefa: opcional, una sola observación, sin hilo. */
 function confHTML(a) {
   const c = a.conformity || confByDate.get(a.date) || null;
   if (headMode) {
-    return `<div class="conf"><label class="field"><span>Conformidad de la jefa de calidad (opcional)</span>
+    return `<div class="conf"><label class="field"><span>Comentario de la jefa de calidad (opcional)</span>
       <textarea data-conf-note="${a.id}" rows="2" maxlength="500" placeholder="Observación (opcional)">${esc(c ? c.note : '')}</textarea></label>
-      <div class="conf-row"><button class="btn sm primary" data-action="save-conf" data-id="${a.id}">${c ? 'Actualizar conformidad' : 'Dar conformidad'}</button>
+      <div class="conf-row"><button class="btn sm primary" data-action="save-conf" data-id="${a.id}">${c ? 'Actualizar confirmación' : 'Confirmar'}</button>
       ${c ? `<span class="muted">Dada por ${esc(c.by || 'la jefa de calidad')}</span>` : ''}</div></div>`;
   }
   return c ? `<div class="conf"><span class="chip ok">Conforme</span> <span class="muted">${esc(c.by || 'Jefa de calidad')}</span>${c.note ? `<p>${esc(c.note)}</p>` : ''}</div>` : '';
@@ -1098,7 +1103,7 @@ document.addEventListener('click', async e => {
         const r = await SupabaseWrite.saveConformity(a.cloudId || a.id, box.value);
         a.conformity = { note: r.note, by: r.by, at: new Date().toISOString() };
         $('#histList').innerHTML = histListHTML();
-        toast('Conformidad guardada.');
+        toast('Auditoría confirmada.');
       } catch (e) { toast((e && e.message) || 'No se pudo guardar la conformidad.', 'error'); }
       break;
     }

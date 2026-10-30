@@ -29,7 +29,8 @@ function fakeSb() {
       upsert(row) { log.upserts.push({ table, row }); cloudAudit.audit_conformity = { note: row.note, reviewer_name: row.reviewer_name, updated_at: 'x' }; return Promise.resolve({ error: null }); },
       then(res) {
         log.from.push(table);
-        const data = table === 'audits' ? [cloudAudit] : [];
+        const c = cloudAudit.audit_conformity;
+        const data = table === 'audits' ? [cloudAudit] : (table === 'audit_conformity' && c) ? [{ ...c, audits: { audit_date: cloudAudit.audit_date } }] : [];
         return Promise.resolve({ data, error: null }).then(res);
       }
     };
@@ -42,9 +43,12 @@ function fakeSb() {
   };
 }
 
-function boot(role) {
+const localDb = JSON.stringify({ version: 2, settings: { evaluator: 'Moni', store: '', goal: 90 }, params: [], bosses: [], workers: [],
+  areas: [{ id: 'ar1', name: 'Panadería', bossId: '', workerIds: [], blocks: [] }],
+  audits: [{ id: 'l1', date: '2026-10-28', ts: '2026-10-28T14:00:00Z', evaluator: 'Moni', areas: [{ areaId: 'ar1', areaName: 'Panadería', notEvaluated: true, total: 0, done: 0 }] }] });
+function boot(role, local) {
   const dom = new JSDOM(html, { url: 'http://localhost/', runScripts: 'dangerously', pretendToBeVisual: true,
-    beforeParse(w) { w.sb = fakeSb(); w.SCAuth = { role: () => role, signedIn: () => !!role }; } });
+    beforeParse(w) { w.sb = fakeSb(); w.SCAuth = { role: () => role, signedIn: () => !!role }; if (local) w.localStorage.setItem('sc_data_v2', local); } });
   const w = dom.window, d = w.document;
   w.addEventListener('error', e => errors.push('window error: ' + e.message));
   w.scrollTo = () => {}; w.Element.prototype.scrollIntoView = () => {};
@@ -78,10 +82,18 @@ function boot(role) {
 
   /* ----- monitora ----- */
   cloudAudit.audit_conformity = { note: 'Revisar basureros', reviewer_name: 'Jefa Demo', updated_at: 'x' };
-  t = boot('monitora');
+  t = boot('monitora', localDb);
   await tick(80); t.w.dispatchEvent(new t.w.CustomEvent('sc-auth')); await tick(100);
   check('Monitora: ve Inicio, Historial, Resumen y Configuración', t.$$('.nav a').filter(a => !a.hidden).length === 4);
   check('Monitora: Inicio muestra las áreas (modo normal)', t.$$('[data-area]').length >= 1);
+  t.w.location.hash = '#/historial'; await tick(80);
+  t.click(t.$('[data-action="toggle-day"]')); await tick();
+  check('Monitora: Historial sin Editar ni Eliminar', t.$$('[data-day]').length >= 1 && !t.$('[data-action="edit-aud"]') && !t.$('[data-action="del-aud"]'));
+  check('Monitora: ve la confirmación de la jefa pero no puede darla', /Revisar basureros/.test(t.$('.conf').textContent) && !t.$('[data-action="save-conf"]'));
+  t = boot('administrador', localDb);
+  await tick(80); t.w.dispatchEvent(new t.w.CustomEvent('sc-auth')); await tick(100);
+  t.w.location.hash = '#/historial'; await tick(80); t.click(t.$('[data-action="toggle-day"]')); await tick();
+  check('Administrador: Historial con Editar y Eliminar', !!t.$('[data-action="edit-aud"]') && !!t.$('[data-action="del-aud"]'));
 
   console.log('\n' + (errors.length ? 'ERRORES:\n' + errors.join('\n') : 'TODO OK — sin errores de consola'));
   process.exit(errors.length ? 1 : 0);
