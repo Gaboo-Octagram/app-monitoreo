@@ -53,7 +53,7 @@ Actualizado: 28-10-2026. Estado actual: versión 2 funcionando, con datos guarda
 ### En curso (rama `fase-1-permisos`)
 - **Migración 001** (`docs/migraciones/001-permisos-y-conformidad.sql`): la monitora edita el catálogo; se quita el flujo aprobar/rechazar y la jefa deja una conformidad diaria opcional (`audit_conformity`, una observación); `delete_all_audits('BORRAR TODO')` solo para el administrador; el administrador ve solo perfiles de su local. Probada en PGlite (`npm run test:schema`). **Aún no aplicada en Supabase.**
 - Antes de aplicarla: desactivar el registro público en Supabase (Authentication → Sign In / Providers) y crear los usuarios desde el panel.
-- Las pruebas `flujos.test.js` están desfasadas respecto de la versión modular con login y deben adaptarse.
+- Pruebas de la app (`npm test`, 64 comprobaciones) adaptadas a la versión modular; el esquema se prueba con `npm run test:schema`.
 
 ### Pendiente
 - Fase 1: escribir las auditorías en Supabase (guardado por partes), permisos

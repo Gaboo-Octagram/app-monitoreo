@@ -2,8 +2,13 @@ const { JSDOM } = require('jsdom');
 const fs = require('fs');
 const path = require('path');
 const dir = path.join(__dirname, '..', 'src') + path.sep;
-const html = fs.readFileSync(dir + 'index.html', 'utf8').replace('<link rel="stylesheet" href="styles.css">', '').replace('<script src="app.js"></script>', '');
-const js = fs.readFileSync(dir + 'app.js', 'utf8');
+// La app ahora es modular y trae Supabase por CDN. En la prueba se quitan todos los <script>
+// del HTML y se cargan en orden solo los locales; sin supabaseClient.js ni auth.js (sin red, sin login).
+const raw = fs.readFileSync(dir + 'index.html', 'utf8');
+const html = raw.replace('<link rel="stylesheet" href="styles.css">', '').replace(/<script[\s\S]*?<\/script>/g, '');
+const SKIP = /supabaseClient\.js|auth\.js|^https?:/;
+const scripts = [...raw.matchAll(/<script src="([^"]+)"><\/script>/g)].map(m => m[1]).filter(src => !SKIP.test(src.replace('./', '')))
+  .map(src => fs.readFileSync(path.join(dir, src), 'utf8'));
 const errors = [];
 
 function boot(initial) {
@@ -13,7 +18,7 @@ function boot(initial) {
   w.addEventListener('error', e => errors.push('window error: ' + e.message));
   w.scrollTo = () => {}; w.print = () => { w.__printed = true; }; w.Element.prototype.scrollIntoView = () => {};
   w.console.error = (...a) => errors.push('console.error: ' + a.join(' '));
-  const s = d.createElement('script'); s.textContent = js; d.body.appendChild(s);
+  scripts.forEach(code => { const s = d.createElement('script'); s.textContent = code; d.body.appendChild(s); });
   const t = {
     w, d, $: q => d.querySelector(q), $$: q => [...d.querySelectorAll(q)],
     click(el) { if (!el) throw new Error('click: elemento no encontrado'); el.dispatchEvent(new w.MouseEvent('click', { bubbles: true })); },
@@ -163,11 +168,11 @@ const check = (n, c) => { console.log((c ? 'OK   ' : 'FALLA') + ' ' + n); if (!c
   click($('.hcard:not(.na) [data-action="toggle-obs"]')); await tick();
 
   // Filtros
-  const q = $('[data-hist="q"]'); typeIn(q, 'zzz'); await tick();
+  const q = $('[data-hist="q"]'); typeIn(q, 'zzz'); await tick(260);
   check('Filtro sin coincidencias', $$('[data-day]').length === 0);
-  typeIn(q, 'trabajador tf 1'); await tick();
+  typeIn(q, 'trabajador tf 1'); await tick(260);
   check('Filtro por trabajador', $$('[data-day]').length === 1);
-  typeIn(q, ''); const sel = $('[data-hist="only"]'); sel.value = 'ok'; sel.dispatchEvent(new w.Event('input', { bubbles: true })); await tick();
+  typeIn(q, ''); const sel = $('[data-hist="only"]'); sel.value = 'ok'; sel.dispatchEvent(new w.Event('input', { bubbles: true })); await tick(260);
   check('Filtro "Sin hallazgos" excluye día con hallazgos', $$('[data-day]').length === 0);
   click($('[data-action="hist-clear"]')); await tick();
 
