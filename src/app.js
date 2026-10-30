@@ -51,7 +51,7 @@ function flashSaved() {
 }
 
 async function save() {
-  try { await AppData.saveDB(db); flashSaved(); return true; }
+  try { await AppData.saveDB(db); flashSaved(); catalogSyncSoon(); return true; }
   catch (e) { toast(e.message || 'No se pudo guardar.', 'error'); return false; }
 }
 
@@ -460,6 +460,7 @@ async function saveAudit() {
   saveDraftsSoon.cancel(); drafts = {}; await saveDrafts(); ui.openAreas = new Set(); ui.init = false;
   render();
   toast('Auditoría guardada en el Historial.');
+  if (catalogRetry) adoptCloudCatalog();
   await syncToCloud(aud);
 }
 
@@ -1260,13 +1261,50 @@ async function refreshConformities() {
   catch (e) { /* sin nube: se sigue sin conformidades */ }
 }
 
+/* ---------- Catálogo en la nube (administrador y monitora) ----------
+   Con sesión, el catálogo (áreas, checks, trabajadores, jefes, parámetros) es
+   el de la nube: se baja al entrar y cada cambio de Configuración se sube. */
+let catalogCloud = false, catalogSig = '', catalogBusy = false, catalogRetry = false;
+const hasDraftWork = () => Object.values(drafts || {}).some(d => d && (Object.keys(d.checks || {}).length || Object.keys(d.workers || {}).length));
+
+async function adoptCloudCatalog() {
+  if (catalogCloud || headMode || !window.SupabaseRead || !window.sb) return;
+  if (hasDraftWork()) { catalogRetry = true; toast('Guarda la evaluación en curso para sincronizar el catálogo con la nube.', 'error'); return; }
+  try {
+    const cat = await SupabaseRead.catalog(window.sb);
+    if (!cat.areas.length && !cat.params.length) return;      // la nube está vacía: se sigue con el local
+    const byName = new Map(cat.areas.map(a => [norm(a.name), a.id]));
+    const oldToNew = new Map(db.areas.map(a => [a.id, byName.get(norm(a.name))]).filter(x => x[1]));
+    db.audits.forEach(a => a.areas.forEach(r => { if (oldToNew.has(r.areaId)) r.areaId = oldToNew.get(r.areaId); }));
+    db.areas = cat.areas; db.params = cat.params; db.workers = cat.workers; db.bosses = cat.bosses;
+    catalogCloud = true; catalogRetry = false;
+    catalogSig = SupabaseCatalog.signature(db);
+    await save();
+    render(true);
+  } catch (e) { toast((e && e.message) || 'No se pudo leer el catálogo de la nube.', 'error'); }
+}
+
+async function pushCatalog() {
+  if (!catalogCloud || headMode || catalogBusy || !window.SupabaseCatalog) return;
+  const sig = SupabaseCatalog.signature(db);
+  if (sig === catalogSig) return;
+  catalogBusy = true;
+  try { const r = await SupabaseCatalog.push(db); if (r && r.ok) catalogSig = sig; }
+  catch (e) { toast((e && e.message) || 'No se pudo guardar el catálogo en la nube.', 'error'); }
+  finally { catalogBusy = false; }
+}
+const catalogSyncSoon = debounce(() => { pushCatalog(); }, 800);
+
 window.addEventListener('sc-auth', () => {
   const role = window.SCAuth ? SCAuth.role() : null;
   if (role === authRole) return;
   authRole = role;
   if (role === HEAD_ROLE) enterHeadMode();
   else if (headMode) location.reload();   // vuelve a cargar los datos locales de este navegador
-  else if (role) refreshConformities();
+  else if (role) {
+    refreshConformities();
+    if (role === 'monitora' || role === 'administrador') adoptCloudCatalog();
+  }
 });
 
 /* ---------- Arranque ---------- */

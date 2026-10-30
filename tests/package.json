@@ -3,7 +3,7 @@
   "private": true,
   "description": "Pruebas simuladas (jsdom) de los flujos principales de la app",
   "scripts": {
-    "test": "node flujos.test.js && node rol-jefa.test.js",
+    "test": "node flujos.test.js && node rol-jefa.test.js && node catalogo-nube.test.js",
     "test:schema": "node schema/migracion-001.test.mjs"
   },
   "devDependencies": {

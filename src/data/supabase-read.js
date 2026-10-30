@@ -64,8 +64,9 @@
       select(client, 'area_workers', 'area_id,worker_id')
     ]);
 
+    const live = x => x.active !== false;   // lo "borrado" queda inactivo en la nube
     const itemsByBlock = new Map();
-    items.forEach(it => {
+    items.filter(live).forEach(it => {
       if (!itemsByBlock.has(it.block_id)) itemsByBlock.set(it.block_id, []);
       itemsByBlock.get(it.block_id).push({ id: it.id, text: it.text });
     });
@@ -88,16 +89,16 @@
     });
 
     return {
-      areas: areas.map(a => ({
+      areas: areas.filter(live).map(a => ({
         id: a.id,
         name: a.name,
         bossId: a.boss_id || '',
         workerIds: workersByArea.get(a.id) || [],
         blocks: blocksByArea.get(a.id) || []
       })),
-      params: params.map(p => ({ id: p.id, text: p.text })),
-      workers: workers.map(w => ({ id: w.id, name: w.name, position: w.position || '' })),
-      bosses: bosses.map(b => ({ id: b.id, name: b.name, position: b.position || '' })),
+      params: params.filter(live).map(p => ({ id: p.id, text: p.text })),
+      workers: workers.filter(live).map(w => ({ id: w.id, name: w.name, position: w.position || '' })),
+      bosses: bosses.filter(live).map(b => ({ id: b.id, name: b.name, position: b.position || '' })),
       counts: {
         items: items.filter(i => i.active !== false).length,
         blocks: blocks.length

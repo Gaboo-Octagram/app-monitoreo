@@ -60,6 +60,11 @@ Actualizado: 28-10-2026. Estado actual: versión 2 funcionando, con datos guarda
 - Pruebas nuevas: `tests/rol-jefa.test.js` (Supabase simulado). `npm test` corre ambas.
 - Falta: probar con la base real, leer el catálogo desde la nube también para la monitora, guardar los cambios de Configuración en Supabase, borrado total desde la app (admin).
 
+### En curso (rama `fase-1-catalogo-nube`, incluye las dos anteriores)
+- **Catálogo en la nube** (administrador y monitora): al entrar con sesión se baja el catálogo de Supabase (las auditorías viejas se reasignan a las áreas de la nube por nombre) y cada cambio en Configuración se sube solo, con aviso si falla. Lo quitado queda inactivo, no se borra, para no romper el historial. Los datos de ejemplo no se suben. Los ids son UUID. Pruebas: `tests/catalogo-nube.test.js`.
+- Si hay una evaluación a medias, la sincronización espera a que se guarde.
+- Falta: borrado total del historial (admin) y Historial agrupado por mes/semana; probar todo con la base real (validación con los tres roles).
+
 ### Pendiente
 - Fase 1: escribir las auditorías en Supabase (guardado por partes), permisos
   por rol en la app y gestión de usuarios desde la interfaz.
