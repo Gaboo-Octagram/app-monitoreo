@@ -11,16 +11,25 @@ create function storage.foldername(name text) returns text[] language sql immuta
 grant usage on schema storage to authenticated,anon; grant all on storage.buckets to authenticated; grant select,insert,update,delete on storage.objects to authenticated;
 alter table storage.objects enable row level security; alter table storage.buckets enable row level security;`);
 await db.exec(fs.readFileSync(R+'docs/schema.sql','utf8').replace('create extension if not exists pgcrypto;',''));
-const mig=fs.readFileSync(R+'docs/migraciones/001-permisos-y-conformidad.sql','utf8');
+const mig=fs.readFileSync(R+'docs/migraciones/001-permisos-y-conformidad.sql','utf8')+fs.readFileSync(R+'docs/migraciones/002-roles-desde-el-panel.sql','utf8');
 await db.exec(mig); await db.exec(mig); // idempotente
 let bad=0; const ok=(c,m)=>{console.log((c?'OK   ':'FALLA ')+m); if(!c)bad++;};
 const store=(await db.query(`select public.create_store_with_defaults('Demo') id`)).rows[0].id;
 const A='11111111-1111-1111-1111-111111111111',M1='22222222-2222-2222-2222-222222222222',M2='33333333-3333-3333-3333-333333333333',J='44444444-4444-4444-4444-444444444444';
 await db.exec(`insert into auth.users(id,email) values('${A}','a@t'),('${M1}','m1@t'),('${M2}','m2@t'),('${J}','j@t')`);
 const as=async id=>{await db.exec('reset role');await db.exec(`select set_config('request.jwt.claim.sub','${id}',false)`);await db.exec('set role authenticated')};
-await as(A); await db.exec(`update public.profiles set role='jefa_calidad' where id='${J}'`);
+// Panel de Supabase (sin usuario de la API): puede asignar roles
+await db.exec(`update public.profiles set role='jefa_calidad' where id='${J}'`);
+ok((await db.query(`select role from public.profiles where id='${J}'`)).rows[0].role==='jefa_calidad','panel asigna rol de jefa');
+await db.exec(`update public.profiles set role='monitora' where id='${J}'`); await as(A);
+await db.exec(`update public.profiles set role='jefa_calidad' where id='${J}'`);
 const fails=async(m,s,p)=>{try{await db.query(s,p);ok(false,m+' (debía fallar)')}catch(e){ok(true,m+' → bloqueado')}};
 const rows=async(m,s,p,n)=>{const r=(await db.query(s,p)).rows[0].n;ok(r===n,`${m} (${r})`)};
+// una monitora sigue sin poder ascenderse por la API
+await as(M1);
+await db.query(`update public.profiles set role='administrador' where id='${M1}'`);
+await db.exec('reset role');
+ok((await db.query(`select role from public.profiles where id='${M1}'`)).rows[0].role==='monitora','monitora NO se asciende a sí misma');
 // catálogo
 await as(M1);
 await db.query(`insert into public.workers(store_id,name) values($1,'Ana Demo')`,[store]);
