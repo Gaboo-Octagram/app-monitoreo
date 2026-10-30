@@ -3,9 +3,11 @@
   "private": true,
   "description": "Pruebas simuladas (jsdom) de los flujos principales de la app",
   "scripts": {
-    "test": "node flujos.test.js"
+    "test": "node flujos.test.js",
+    "test:schema": "node schema/migracion-001.test.mjs"
   },
   "devDependencies": {
-    "jsdom": "^30.1.3"
+    "jsdom": "^30.1.3",
+    "@electric-sql/pglite": "0.5.13"
   }
 }
