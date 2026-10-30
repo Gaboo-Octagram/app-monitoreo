@@ -363,3 +363,9 @@ tr.invalid td{box-shadow:none;background:var(--nok-soft)}
     backdrop-filter:blur(8px);border-top:1px solid var(--border-2);border-radius:0;z-index:4}
   .save-bar .btn.big{flex:1 1 100%}
 }
+
+/* Conformidad diaria de la jefa de calidad */
+.conf{margin-top:14px;padding:12px 14px;border:1px solid var(--border-2);border-radius:10px;background:var(--bg)}
+.conf p{margin:6px 0 0}
+.conf textarea{resize:vertical;min-height:56px}
+.conf-row{display:flex;gap:12px;align-items:center;margin-top:8px;flex-wrap:wrap}
