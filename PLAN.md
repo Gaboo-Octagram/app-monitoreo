@@ -50,6 +50,11 @@ Actualizado: 28-10-2026. Estado actual: versión 2 funcionando, con datos guarda
   Si la auditoría ya fue enviada en la nube, no se modifica; al borrarla en el
   Historial también se borra su copia en borrador.
 
+### En curso (rama `fase-1-permisos`)
+- **Migración 001** (`docs/migraciones/001-permisos-y-conformidad.sql`): la monitora edita el catálogo; se quita el flujo aprobar/rechazar y la jefa deja una conformidad diaria opcional (`audit_conformity`, una observación); `delete_all_audits('BORRAR TODO')` solo para el administrador; el administrador ve solo perfiles de su local. Probada en PGlite (`npm run test:schema`). **Aún no aplicada en Supabase.**
+- Antes de aplicarla: desactivar el registro público en Supabase (Authentication → Sign In / Providers) y crear los usuarios desde el panel.
+- Las pruebas `flujos.test.js` están desfasadas respecto de la versión modular con login y deben adaptarse.
+
 ### Pendiente
 - Fase 1: escribir las auditorías en Supabase (guardado por partes), permisos
   por rol en la app y gestión de usuarios desde la interfaz.
