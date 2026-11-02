@@ -2,22 +2,13 @@ const { JSDOM } = require('jsdom');
 const fs = require('fs');
 const path = require('path');
 const dir = path.join(__dirname, '..', 'src') + path.sep;
-
-/* La app está dividida en archivos que se cargan en un orden exacto
-   (ver src/index.html). Se excluyen auth.js y el cliente real de Supabase:
-   las pruebas no necesitan cuenta ni conexión. */
-const FILES = [
-  'lib/util.js', 'lib/constants.js', 'lib/photos.js',
-  'data/provider.js', 'data/local-storage-provider.js', 'data/model.js',
-  'data/supabase-read.js', 'data/supabase-write.js',
-  'features/report.js', 'features/csv.js',
-  'app.js'
-];
-const sources = FILES.map(file => ({ file, code: fs.readFileSync(dir + file, 'utf8') }));
-
-const html = fs.readFileSync(dir + 'index.html', 'utf8')
-  .replace('<link rel="stylesheet" href="styles.css">', '')
-  .replace(/<script[\s\S]*?<\/script>/g, '');
+// La app ahora es modular y trae Supabase por CDN. En la prueba se quitan todos los <script>
+// del HTML y se cargan en orden solo los locales; sin supabaseClient.js ni auth.js (sin red, sin login).
+const raw = fs.readFileSync(dir + 'index.html', 'utf8');
+const html = raw.replace('<link rel="stylesheet" href="styles.css">', '').replace(/<script[\s\S]*?<\/script>/g, '');
+const SKIP = /supabaseClient\.js|auth\.js|^https?:/;
+const scripts = [...raw.matchAll(/<script src="([^"]+)"><\/script>/g)].map(m => m[1]).filter(src => !SKIP.test(src.replace('./', '')))
+  .map(src => fs.readFileSync(path.join(dir, src), 'utf8'));
 const errors = [];
 
 function boot(initial) {
@@ -27,12 +18,7 @@ function boot(initial) {
   w.addEventListener('error', e => errors.push('window error: ' + e.message));
   w.scrollTo = () => {}; w.print = () => { w.__printed = true; }; w.Element.prototype.scrollIntoView = () => {};
   w.console.error = (...a) => errors.push('console.error: ' + a.join(' '));
-  sources.forEach(({ file, code }) => {
-    const s = d.createElement('script');
-    s.textContent = code;
-    try { d.body.appendChild(s); }
-    catch (e) { errors.push(`script ${file}: ` + e.message); throw e; }
-  });
+  scripts.forEach(code => { const s = d.createElement('script'); s.textContent = code; d.body.appendChild(s); });
   const t = {
     w, d, $: q => d.querySelector(q), $$: q => [...d.querySelectorAll(q)],
     click(el) { if (!el) throw new Error('click: elemento no encontrado'); el.dispatchEvent(new w.MouseEvent('click', { bubbles: true })); },
@@ -181,12 +167,12 @@ const check = (n, c) => { console.log((c ? 'OK   ' : 'FALLA') + ' ' + n); if (!c
   check('Observaciones se pliegan', !$('.hcard:not(.na) .find'));
   click($('.hcard:not(.na) [data-action="toggle-obs"]')); await tick();
 
-  // Filtros (la búsqueda espera 180 ms antes de redibujar)
-  const q = $('[data-hist="q"]'); typeIn(q, 'zzz'); await tick(250);
+  // Filtros
+  const q = $('[data-hist="q"]'); typeIn(q, 'zzz'); await tick(260);
   check('Filtro sin coincidencias', $$('[data-day]').length === 0);
-  typeIn(q, 'trabajador tf 1'); await tick(250);
+  typeIn(q, 'trabajador tf 1'); await tick(260);
   check('Filtro por trabajador', $$('[data-day]').length === 1);
-  typeIn(q, ''); const sel = $('[data-hist="only"]'); sel.value = 'ok'; sel.dispatchEvent(new w.Event('input', { bubbles: true })); await tick(250);
+  typeIn(q, ''); const sel = $('[data-hist="only"]'); sel.value = 'ok'; sel.dispatchEvent(new w.Event('input', { bubbles: true })); await tick(260);
   check('Filtro "Sin hallazgos" excluye día con hallazgos', $$('[data-day]').length === 0);
   click($('[data-action="hist-clear"]')); await tick();
 
@@ -213,7 +199,12 @@ const check = (n, c) => { console.log((c ? 'OK   ' : 'FALLA') + ' ' + n); if (!c
   check('Informe: imprimir', w.__printed === true && !!$('#printArea .report'));
   click(foot(0)); await tick();
   await go('#/historial');
-  check('Historial con datos de ejemplo: varias filas, ordenadas', $$('[data-day]').length > 30);
+  check('Historial agrupado: mes y semana más recientes abiertos, resto cerrado', $$('.grp-month').length >= 2 && $$('.grp-month.open').length === 1 && $$('.grp-week.open').length === 1 && $$('[data-day]').length >= 1 && $$('[data-day]').length < 8);
+  const nWeeks = $$('.grp-week').length;
+  click($$('.grp-month:not(.open) > .grp-head')[0]); await tick();
+  check('Abrir un mes cerrado muestra sus semanas', $$('.grp-week').length > nWeeks);
+  for (let i = 0; i < 12; i++) { const c = $$('.grp:not(.open) > .grp-head')[0]; if (!c) break; click(c); await tick(); }
+  check('Con todo abierto: varias filas, ordenadas', $$('[data-day]').length > 30);
   click($$('[data-action="toggle-day"]')[3]); await tick();
   check('Día de ejemplo muestra tarjetas', $$('.hcard').length >= 7);
   await go('#/config'); click($('[data-tab="general"]')); await tick();

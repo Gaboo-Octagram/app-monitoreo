@@ -251,3 +251,15 @@ python -m http.server 8000
 6. **Ajustar los informes** para que incluyan las fotos guardadas en Storage.
 7. **Definir qué pasa al rechazar**: ¿la monitora corrige y reenvía? Eso pide
    una transición nueva en el esquema.
+
+
+---
+
+## 10. Migración 001 (propuesta, aún no aplicada)
+
+`docs/migraciones/001-permisos-y-conformidad.sql` se ejecuta después de `schema.sql` y cambia las secciones 3 y 7:
+
+- La **monitora** también edita el catálogo (áreas, ítems, trabajadores, jefes, parámetros).
+- Desaparece el recorrido borrador → enviada → revisada. La **jefa** deja una *conformidad* diaria, opcional, con una sola observación (máx. 500 caracteres), en la tabla `audit_conformity`. No puede tocar hallazgos ni bloquea auditorías.
+- `delete_all_audits('BORRAR TODO')`: solo el administrador. Borra las auditorías del local; los archivos de Storage se limpian aparte y el respaldo lo baja la app antes.
+- El administrador solo ve perfiles de su local.

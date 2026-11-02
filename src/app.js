@@ -51,7 +51,7 @@ function flashSaved() {
 }
 
 async function save() {
-  try { await AppData.saveDB(db); flashSaved(); return true; }
+  try { await AppData.saveDB(db); flashSaved(); catalogSyncSoon(); return true; }
   catch (e) { toast(e.message || 'No se pudo guardar.', 'error'); return false; }
 }
 
@@ -82,7 +82,8 @@ const ui = {
   openAreas: new Set(), openDays: new Set(), closedObs: new Set(), invalid: new Set(), init: false,
   hist: { q: '', area: '', from: '', to: '', only: '' },
   sum: { period: 'week', ref: todayISO() },
-  cfgTab: 'areas', cfgArea: ''
+  cfgTab: 'areas', cfgArea: '',
+  groups: { open: new Set(), closed: new Set() }   // meses y semanas del Historial
 };
 
 /* ---------- Cálculos ---------- */
@@ -460,6 +461,7 @@ async function saveAudit() {
   saveDraftsSoon.cancel(); drafts = {}; await saveDrafts(); ui.openAreas = new Set(); ui.init = false;
   render();
   toast('Auditoría guardada en el Historial.');
+  if (catalogRetry) adoptCloudCatalog();
   await syncToCloud(aud);
 }
 
@@ -505,11 +507,53 @@ function filteredAudits() {
   return out.sort((x, y) => y.a.date.localeCompare(x.a.date) || y.a.ts.localeCompare(x.a.ts));
 }
 
+/* ---------- Historial agrupado: mes → semana → día ----------
+   El mes más reciente y su semana más reciente se abren solos; el resto
+   queda cerrado. Con filtros activos se abre todo, para ver los resultados. */
+const SHORT_MONTH = d => MONTHS[d.getMonth()].slice(0, 3);
+const parseISO = iso => { const [y, m, d] = iso.split('-').map(Number); return new Date(y, m - 1, d); };
+const isoOf = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+function weekStartISO(iso) { const d = parseISO(iso), k = (d.getDay() + 6) % 7; d.setDate(d.getDate() - k); return isoOf(d); }
+function weekLabel(startIso) {
+  const a = parseISO(startIso), b = parseISO(startIso); b.setDate(b.getDate() + 6);
+  return a.getMonth() === b.getMonth() ? `Semana del ${a.getDate()} al ${b.getDate()} de ${MONTHS[b.getMonth()]}` : `Semana del ${a.getDate()} ${SHORT_MONTH(a)} al ${b.getDate()} ${SHORT_MONTH(b)}`;
+}
+const filtersActive = () => Object.values(ui.hist).some(Boolean);
+const auditAvg = areas => avg(areas.filter(r => !r.notEvaluated).map(areaPct).filter(x => x !== null));
+
+function groupHTML(kind, key, title, items, inner, open) {
+  const p = avg(items.map(({ areas }) => auditAvg(areas)).filter(x => x !== null));
+  return `<section class="grp grp-${kind} ${open ? 'open' : ''}">
+    <button class="grp-head" data-action="toggle-grp" data-key="${esc(key)}" aria-expanded="${open}">
+      <span class="grp-title">${esc(title)}</span><span class="muted">${items.length} ${plural(items.length, 'auditoría', 'auditorías')}</span>
+      <span class="push">${pillHTML(p)}<span class="chev"></span></span></button>
+    ${open ? `<div class="grp-body">${inner}</div>` : ''}</section>`;
+}
+
 function histListHTML() {
   if (!db.audits.length) return emptyState('Sin auditorías todavía', 'Cuando guardes una auditoría desde Inicio, aparecerá aquí.', 'Ir a Inicio', '#/inicio');
   const list = filteredAudits();
   if (!list.length) return `<div class="card empty"><h3>Sin resultados</h3><p>Prueba con otros filtros.</p></div>`;
-  return `<div class="list-head"><span>${list.length} ${plural(list.length, 'auditoría', 'auditorías')}</span></div>${list.map(({ a, areas }) => dayCardHTML(a, areas)).join('')}`;
+  const all = filtersActive(), g = ui.groups;
+  const months = new Map();                     // mes → semana → [auditorías] (ya vienen de la más nueva a la más antigua)
+  list.forEach(it => {
+    const m = it.a.date.slice(0, 7), w = weekStartISO(it.a.date);
+    if (!months.has(m)) months.set(m, new Map());
+    if (!months.get(m).has(w)) months.get(m).set(w, []);
+    months.get(m).get(w).push(it);
+  });
+  const firstMonth = [...months.keys()][0], firstWeek = [...months.get(firstMonth).keys()][0];
+  const isOpen = (key, byDefault) => all || (g.open.has(key) ? true : g.closed.has(key) ? false : byDefault);
+  const body = [...months].map(([m, weeks]) => {
+    const mKey = `m|${m}`, d = parseISO(m + '-01');
+    const inner = [...weeks].map(([w, items]) => {
+      const wKey = `w|${w}`;
+      return groupHTML('week', wKey, weekLabel(w), items, items.map(({ a, areas }) => dayCardHTML(a, areas)).join(''), isOpen(wKey, m === firstMonth && w === firstWeek));
+    }).join('');
+    const mItems = [...weeks.values()].flat();
+    return groupHTML('month', mKey, `${MONTHS[d.getMonth()][0].toUpperCase() + MONTHS[d.getMonth()].slice(1)} de ${d.getFullYear()}`, mItems, inner, isOpen(mKey, m === firstMonth));
+  }).join('');
+  return `<div class="list-head"><span>${list.length} ${plural(list.length, 'auditoría', 'auditorías')}</span></div>${body}`;
 }
 
 /* Al escribir en "Buscar" no hace falta redibujar en cada tecla. */
@@ -567,8 +611,26 @@ function dayCardHTML(a, areas) {
       <span class="push">${nf ? `<span class="chip nok">${nf} ${plural(nf, 'hallazgo', 'hallazgos')}</span>` : '<span class="chip ok">Sin hallazgos</span>'}${pillHTML(p)}<span class="chev"></span></span>
     </button>
     ${open ? `<div class="day-body"><div class="hcards">${areas.map(r => histAreaCard(a, r)).join('')}</div>
-      <div class="day-actions"><button class="btn sm" data-action="edit-aud" data-id="${a.id}">Editar</button><button class="btn sm danger" data-action="del-aud" data-id="${a.id}">Eliminar</button></div></div>` : ''}
+      ${confHTML(a)}
+      ${canEditHistory() ? `<div class="day-actions"><button class="btn sm" data-action="edit-aud" data-id="${a.id}">Editar</button><button class="btn sm danger" data-action="del-aud" data-id="${a.id}">Eliminar</button></div>` : ''}</div>` : ''}
   </article>`;
+}
+
+/* Editar o eliminar un día completo desde el Historial: solo el administrador.
+   (La monitora corrige en Inicio antes de guardar; la jefa solo confirma.)
+   Sin sesión (modo local de este navegador) se mantiene como antes. */
+const canEditHistory = () => !headMode && (authRole === null || authRole === 'administrador');
+
+/* Conformidad diaria de la jefa: opcional, una sola observación, sin hilo. */
+function confHTML(a) {
+  const c = a.conformity || confByDate.get(a.date) || null;
+  if (headMode) {
+    return `<div class="conf"><label class="field"><span>Comentario de la jefa de calidad (opcional)</span>
+      <textarea data-conf-note="${a.id}" rows="2" maxlength="500" placeholder="Observación (opcional)">${esc(c ? c.note : '')}</textarea></label>
+      <div class="conf-row"><button class="btn sm primary" data-action="save-conf" data-id="${a.id}">${c ? 'Actualizar confirmación' : 'Confirmar'}</button>
+      ${c ? `<span class="muted">Dada por ${esc(c.by || 'la jefa de calidad')}</span>` : ''}</div></div>`;
+  }
+  return c ? `<div class="conf"><span class="chip ok">Conforme</span> <span class="muted">${esc(c.by || 'Jefa de calidad')}</span>${c.note ? `<p>${esc(c.note)}</p>` : ''}</div>` : '';
 }
 
 function histAreaCard(a, r) {
@@ -928,7 +990,9 @@ function cfgGeneral() {
         <button class="btn" data-action="export">Descargar respaldo</button>
         <label class="btn" style="cursor:pointer">Restaurar respaldo<input type="file" id="importInput" accept=".json,application/json" hidden></label>
         <button class="btn" data-action="${hasSample ? 'remove-sample' : 'load-sample'}">${hasSample ? 'Quitar datos de ejemplo' : 'Cargar datos de ejemplo'}</button>
-        <button class="btn danger" data-action="reset">Borrar todo</button></div></div>`;
+        <button class="btn danger" data-action="reset">Borrar todo</button></div></div>` +
+    (authRole === 'administrador' ? sectionHead('Historial en la nube (administrador)') + `<div class="card panel"><p class="muted" style="margin-bottom:12px">Borra todas las auditorías, fotos y conformidades de la nube, para empezar desde cero. Antes se descarga un respaldo y debes escribir BORRAR TODO. El catálogo no se toca.</p>
+      <button class="btn danger" data-action="cloud-wipe">Borrar historial completo…</button></div>` : '');
 }
 
 /* ----- Datos de ejemplo ----- */
@@ -985,9 +1049,10 @@ const TITLES = { inicio: 'Inicio', historial: 'Historial', resumen: 'Resumen', c
 
 function render(keepScroll) {
   const route = location.hash.replace('#/', '');
-  const v = VIEWS[route] ? route : 'inicio';
+  let v = VIEWS[route] ? route : 'inicio';
+  if (headMode && (v === 'inicio' || v === 'config')) v = 'resumen';
   const y = window.scrollY;
-  $$('.nav a').forEach(a => a.classList.toggle('active', a.dataset.view === v));
+  $$('.nav a').forEach(a => { a.classList.toggle('active', a.dataset.view === v); a.hidden = headMode && (a.dataset.view === 'inicio' || a.dataset.view === 'config'); });
   $('#pageTitle').textContent = TITLES[v];
   document.title = `${TITLES[v]} · Sistema de Calidad`;
   $('#view').innerHTML = VIEWS[v]();
@@ -1031,6 +1096,23 @@ document.addEventListener('click', async e => {
       if (await confirmBox('¿Descartar todo lo que has marcado en esta auditoría sin guardar?', 'Descartar', true)) { saveDraftsSoon.cancel(); drafts = {}; await saveDrafts(); render(true); }
       break;
     /* Historial */
+    case 'save-conf': {
+      const a = db.audits.find(x => x.id === id), box = $(`[data-conf-note="${id}"]`);
+      if (!a || !box) break;
+      try {
+        const r = await SupabaseWrite.saveConformity(a.cloudId || a.id, box.value);
+        a.conformity = { note: r.note, by: r.by, at: new Date().toISOString() };
+        $('#histList').innerHTML = histListHTML();
+        toast('Auditoría confirmada.');
+      } catch (e) { toast((e && e.message) || 'No se pudo guardar la conformidad.', 'error'); }
+      break;
+    }
+    case 'cloud-wipe': await wipeCloudHistory(); break;
+    case 'toggle-grp': {
+      const key = el.dataset.key, g = ui.groups, wasOpen = el.getAttribute('aria-expanded') === 'true';
+      g.open.delete(key); g.closed.delete(key); (wasOpen ? g.closed : g.open).add(key);
+      $('#histList').innerHTML = histListHTML(); break;
+    }
     case 'toggle-day': ui.openDays.has(id) ? ui.openDays.delete(id) : ui.openDays.add(id); $('#histList').innerHTML = histListHTML(); break;
     case 'toggle-obs': ui.closedObs.has(el.dataset.key) ? ui.closedObs.delete(el.dataset.key) : ui.closedObs.add(el.dataset.key); $('#histList').innerHTML = histListHTML(); break;
     case 'edit-aud': editAuditModal(id); break;
@@ -1105,8 +1187,10 @@ document.addEventListener('click', async e => {
     case 'load-sample': if (!db.areas.length) return toast('Crea al menos un área primero.', 'error'); await loadSample(); break;
     case 'remove-sample': await removeSample(); break;
     case 'reset':
-      if (await confirmBox('Se borrarán TODAS las áreas, trabajadores, auditorías y archivos de este navegador. ¿Continuar?', 'Borrar todo', true)) {
-        db = seed(); saveDraftsSoon.cancel(); drafts = {}; files = []; ui.init = false; await save(); await saveDrafts(); await AppData.saveFiles(files); render(true); toast('Datos restablecidos.');
+      if (await confirmBox((catalogCloud ? 'Se borrarán las auditorías, borradores y archivos de este navegador. El catálogo (áreas, checks y trabajadores) se conserva porque está en la nube. ¿Continuar?' : 'Se borrarán TODAS las áreas, trabajadores, auditorías y archivos de este navegador. ¿Continuar?'), 'Borrar todo', true)) {
+        const keep = catalogCloud ? { areas: db.areas, params: db.params, workers: db.workers, bosses: db.bosses } : null;
+        db = seed(); if (keep) Object.assign(db, keep);
+        saveDraftsSoon.cancel(); drafts = {}; files = []; ui.init = false; await save(); await saveDrafts(); await AppData.saveFiles(files); render(true); toast('Datos restablecidos.');
       }
       break;
   }
@@ -1181,7 +1265,7 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 const pendingSync = () => db.audits.filter(a => !a.cloudSyncedAt && !a.cloudSkipped);
 
 async function syncPending(limit = 5) {
-  if (!window.SupabaseWrite) return { synced: 0, pending: 0 };
+  if (!window.SupabaseWrite || headMode) return { synced: 0, pending: 0 };
   let synced = 0;
   for (const aud of pendingSync().slice(-limit)) {
     let r;
@@ -1203,6 +1287,106 @@ if (window.sb && sb.auth && sb.auth.onAuthStateChange) {
     if (session) setTimeout(() => syncPending().catch(() => {}), 1200);
   });
 }
+
+/* Borrado total del historial en la nube: respaldo → frase de confirmación → borrado. */
+async function wipeCloudHistory() {
+  if (!window.SupabaseWrite || !window.sb) return toast('No hay conexión con la nube.', 'error');
+  if (!await confirmBox('Se descargará un respaldo de todas las auditorías de la nube y luego podrás borrarlas definitivamente. ¿Continuar?', 'Descargar respaldo', false, 'Borrar historial')) return;
+  let list;
+  try { list = await SupabaseRead.audits(100000); } catch (e) { return toast((e && e.message) || 'No se pudo leer el historial.', 'error'); }
+  if (!list.length) return toast('No hay auditorías en la nube.');
+  const strip = a => ({ ...a, areas: a.areas.map(r => r.blocks ? { ...r, blocks: r.blocks.map(b => ({ ...b, entries: b.entries.map(e => ({ ...e, photos: (e.photos || []).length })) })) } : r) });
+  download(`respaldo-historial-nube-${todayISO()}.json`, 'data:application/json;charset=utf-8,' + encodeURIComponent(JSON.stringify({ exportedAt: new Date().toISOString(), nota: 'Las fotos no se incluyen; solo su cantidad.', audits: list.map(strip) })));
+  formModal({
+    title: `Borrar ${list.length} ${plural(list.length, 'auditoría', 'auditorías')} de la nube`, submitLabel: 'Borrar definitivamente',
+    fields: [{ name: 'phrase', label: 'Escribe BORRAR TODO para confirmar', required: true }],
+    onSubmit: async d => {
+      if (d.phrase !== 'BORRAR TODO') { toast('La frase no coincide. No se borró nada.', 'error'); return false; }
+      try {
+        const r = await SupabaseWrite.deleteAllAudits(d.phrase);
+        db.audits = []; ui.openDays = new Set(); await save(); render(true);
+        toast(`Historial borrado (${r.deleted} ${plural(r.deleted, 'auditoría', 'auditorías')}).`);
+      } catch (e) { toast((e && e.message) || 'No se pudo borrar el historial.', 'error'); return false; }
+    }
+  });
+}
+
+/* ---------- Roles y conformidad de la jefa ----------
+   La jefa de calidad no evalúa ni configura: ve Resumen e Historial con las
+   auditorías leídas desde la nube (solo lectura) y deja su conformidad diaria.
+   Los datos de este navegador no se tocan mientras esté en ese modo. */
+const HEAD_ROLE = 'jefa_calidad';
+let headMode = false;
+let confByDate = new Map();   // fecha → { note, by, at } (para monitora y administrador)
+let authRole = null;
+
+async function enterHeadMode() {
+  if (headMode) return;
+  headMode = true;
+  AppData.setReadOnly(true);
+  try {
+    const [list, cat] = await Promise.all([SupabaseRead.audits(), SupabaseRead.catalog(window.sb)]);
+    const goal = (list.find(a => a.goal) || {}).goal;
+    db = normalizeDB({ ...seed(), areas: cat.areas, params: cat.params, workers: cat.workers, bosses: cat.bosses, audits: list });
+    if (goal) db.settings.goal = goal;
+  } catch (e) {
+    toast((e && e.message) || 'No se pudieron leer las auditorías de la nube.', 'error');
+  }
+  if (!['resumen', 'historial'].includes(location.hash.replace('#/', ''))) location.hash = '#/resumen';
+  render();
+}
+
+async function refreshConformities() {
+  if (headMode || !window.SupabaseRead || !window.sb) return;
+  try { confByDate = await SupabaseRead.conformities(); if ($('#histList')) $('#histList').innerHTML = histListHTML(); }
+  catch (e) { /* sin nube: se sigue sin conformidades */ }
+}
+
+/* ---------- Catálogo en la nube (administrador y monitora) ----------
+   Con sesión, el catálogo (áreas, checks, trabajadores, jefes, parámetros) es
+   el de la nube: se baja al entrar y cada cambio de Configuración se sube. */
+let catalogCloud = false, catalogSig = '', catalogBusy = false, catalogRetry = false;
+const hasDraftWork = () => Object.values(drafts || {}).some(d => d && (Object.keys(d.checks || {}).length || Object.keys(d.workers || {}).length));
+
+async function adoptCloudCatalog() {
+  if (catalogCloud || headMode || !window.SupabaseRead || !window.sb) return;
+  if (hasDraftWork()) { catalogRetry = true; toast('Guarda la evaluación en curso para sincronizar el catálogo con la nube.', 'error'); return; }
+  try {
+    const cat = await SupabaseRead.catalog(window.sb);
+    if (!cat.areas.length && !cat.params.length) return;      // la nube está vacía: se sigue con el local
+    const byName = new Map(cat.areas.map(a => [norm(a.name), a.id]));
+    const oldToNew = new Map(db.areas.map(a => [a.id, byName.get(norm(a.name))]).filter(x => x[1]));
+    db.audits.forEach(a => a.areas.forEach(r => { if (oldToNew.has(r.areaId)) r.areaId = oldToNew.get(r.areaId); }));
+    db.areas = cat.areas; db.params = cat.params; db.workers = cat.workers; db.bosses = cat.bosses;
+    catalogCloud = true; catalogRetry = false;
+    catalogSig = SupabaseCatalog.signature(db);
+    await save();
+    render(true);
+  } catch (e) { toast((e && e.message) || 'No se pudo leer el catálogo de la nube.', 'error'); }
+}
+
+async function pushCatalog() {
+  if (!catalogCloud || headMode || catalogBusy || !window.SupabaseCatalog) return;
+  const sig = SupabaseCatalog.signature(db);
+  if (sig === catalogSig) return;
+  catalogBusy = true;
+  try { const r = await SupabaseCatalog.push(db); if (r && r.ok) catalogSig = sig; }
+  catch (e) { toast((e && e.message) || 'No se pudo guardar el catálogo en la nube.', 'error'); }
+  finally { catalogBusy = false; }
+}
+const catalogSyncSoon = debounce(() => { pushCatalog(); }, 800);
+
+window.addEventListener('sc-auth', () => {
+  const role = window.SCAuth ? SCAuth.role() : null;
+  if (role === authRole) return;
+  authRole = role;
+  if (role === HEAD_ROLE) enterHeadMode();
+  else if (headMode) location.reload();   // vuelve a cargar los datos locales de este navegador
+  else if (role) {
+    refreshConformities();
+    if (role === 'monitora' || role === 'administrador') adoptCloudCatalog();
+  }
+});
 
 /* ---------- Arranque ---------- */
 async function boot() {

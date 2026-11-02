@@ -150,7 +150,6 @@
 
     let auditId = null;
     if (existing) {
-      if (existing.status !== 'draft') return { skipped: 'enviada', status: existing.status };
       const { error: upErr } = await client
         .from('audits')
         .update({
@@ -323,5 +322,41 @@
     return { ok: true, auditId: row.id };
   }
 
-  window.SupabaseWrite = { saveAudit, removeAudit, uuid };
+  /* Conformidad diaria de la jefa: opcional, una sola observación. */
+  async function saveConformity(auditId, note) {
+    const client = sb();
+    if (!client) throw friendly('No hay conexión con la nube.', 'audit_conformity');
+    const session = await currentSession(client);
+    if (!session || !session.user) throw friendly('Inicia sesión para dar la conformidad.', 'audit_conformity');
+    const profile = await currentProfile(client, session.user.id);
+    const text = String(note || '').trim().slice(0, 500);
+    const { error } = await client.from('audit_conformity').upsert({
+      audit_id: auditId,
+      reviewer_id: session.user.id,
+      reviewer_name: (profile && profile.full_name) || '',
+      note: text
+    }, { onConflict: 'audit_id' });
+    if (error) throw friendly(error, 'audit_conformity');
+    return { ok: true, by: (profile && profile.full_name) || '', note: text };
+  }
+
+  /* Borrado total del historial (solo administrador): función de la base +
+     limpieza de las fotos de Storage. Devuelve cuántas auditorías se borraron. */
+  async function deleteAllAudits(phrase) {
+    const client = sb();
+    if (!client) throw friendly('No hay conexión con la nube.', 'audits');
+    const session = await currentSession(client);
+    if (!session || !session.user) throw friendly('Inicia sesión para continuar.', 'audits');
+    const profile = await currentProfile(client, session.user.id);
+    const { data, error } = await client.rpc('delete_all_audits', { p_confirm: phrase });
+    if (error) throw friendly(error, 'audits');
+    if (profile && profile.store_id) {
+      const bucket = client.storage.from(BUCKET);
+      const { data: dirs } = await bucket.list(profile.store_id, { limit: 1000 });
+      for (const d of dirs || []) await cleanPhotos(client, profile.store_id, d.name).catch(() => {});
+    }
+    return { deleted: Number(data) || 0 };
+  }
+
+  window.SupabaseWrite = { saveAudit, removeAudit, saveConformity, deleteAllAudits, uuid };
 })();

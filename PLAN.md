@@ -50,6 +50,27 @@ Actualizado: 28-10-2026. Estado actual: versión 2 funcionando, con datos guarda
   Si la auditoría ya fue enviada en la nube, no se modifica; al borrarla en el
   Historial también se borra su copia en borrador.
 
+### En curso (rama `fase-1-permisos`)
+- **Migración 001** (`docs/migraciones/001-permisos-y-conformidad.sql`): la monitora edita el catálogo; se quita el flujo aprobar/rechazar y la jefa deja una conformidad diaria opcional (`audit_conformity`, una observación); `delete_all_audits('BORRAR TODO')` solo para el administrador; el administrador ve solo perfiles de su local. Probada en PGlite (`npm run test:schema`). **Aún no aplicada en Supabase.**
+- Antes de aplicarla: desactivar el registro público en Supabase (Authentication → Sign In / Providers) y crear los usuarios desde el panel.
+- Pruebas de la app (`npm test`, 64 comprobaciones) adaptadas a la versión modular; el esquema se prueba con `npm run test:schema`.
+
+### En curso (rama `fase-1-guardado-por-roles`)
+- **Vista de la jefa de calidad:** al entrar con rol `jefa_calidad` ve solo Resumen e Historial, con las auditorías leídas de la nube (fotos con enlace temporal), sin Editar/Eliminar y sin guardar nada en el navegador. Deja su **conformidad diaria** (una observación, hasta 500 caracteres); monitora y administrador la ven en el Historial.
+- Pruebas nuevas: `tests/rol-jefa.test.js` (Supabase simulado). `npm test` corre ambas.
+- Falta: probar con la base real, leer el catálogo desde la nube también para la monitora, guardar los cambios de Configuración en Supabase, borrado total desde la app (admin).
+
+### En curso (rama `fase-1-catalogo-nube`, incluye las dos anteriores)
+- **Catálogo en la nube** (administrador y monitora): al entrar con sesión se baja el catálogo de Supabase (las auditorías viejas se reasignan a las áreas de la nube por nombre) y cada cambio en Configuración se sube solo, con aviso si falla. Lo quitado queda inactivo, no se borra, para no romper el historial. Los datos de ejemplo no se suben. Los ids son UUID. Pruebas: `tests/catalogo-nube.test.js`.
+- Si hay una evaluación a medias, la sincronización espera a que se guarde.
+- Falta: borrado total del historial (admin) y Historial agrupado por mes/semana; probar todo con la base real (validación con los tres roles).
+
+### En curso (rama `fase-2-historial`, incluye las anteriores)
+- **Historial agrupado** en mes → semana → día (el mes y la semana más recientes abiertos; con filtros se abre todo). Cada grupo muestra su cantidad de auditorías y su porcentaje promedio.
+- **Borrado total del historial en la nube** (solo administrador, Configuración → General): descarga un respaldo JSON, pide escribir BORRAR TODO, llama a `delete_all_audits` y limpia las fotos de Storage. El catálogo no se toca.
+- "Borrar todo" local ya no borra el catálogo cuando este viene de la nube.
+- Falta: validación real con los tres roles, publicar (Cloudflare Pages), formato del PDF, listas reales.
+
 ### Pendiente
 - Fase 1: escribir las auditorías en Supabase (guardado por partes), permisos
   por rol en la app y gestión de usuarios desde la interfaz.
