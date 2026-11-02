@@ -81,7 +81,7 @@ const dEnsure = id => { const d = drafts[id] = drafts[id] || {}; d.checks = d.ch
 const ui = {
   openAreas: new Set(), openDays: new Set(), closedObs: new Set(), invalid: new Set(), init: false,
   hist: { q: '', area: '', from: '', to: '', only: '' },
-  sum: { period: 'week', ref: todayISO() },
+  sum: { period: 'week', ref: todayISO(), weeks: 3 },
   cfgTab: 'areas', cfgArea: '',
   groups: { open: new Set(), closed: new Set() }   // meses y semanas del Historial
 };
@@ -775,6 +775,50 @@ const barRow = (label, p) => `<div class="bar-row"><span class="bar-label" title
   <div class="bar-track"><div class="bar-fill ${pctClass(p)}" style="width:${p ?? 0}%"></div><span class="bar-goal" style="left:${db.settings.goal}%" title="Meta ${db.settings.goal}%"></span></div>
   <span class="bar-val">${pctText(p)}</span></div>`;
 
+/* ---------- Comparativa por categoría y área, semana a semana ----------
+   Termina en la semana de la fecha de referencia y mira N semanas hacia atrás
+   (2, 3 o 4). Por cada categoría (Trabajadores, Limpieza, Orden) y cada área:
+   un porcentaje por semana. Sin dato = esa semana no se evaluó. */
+function weeksCompareData(n) {
+  const last = weekStartISO(ui.sum.ref), weeks = [];
+  for (let i = n - 1; i >= 0; i--) {
+    const d = parseISO(last); d.setDate(d.getDate() - 7 * i);
+    const start = isoOf(d); d.setDate(d.getDate() + 6);
+    weeks.push({ start, end: isoOf(d), label: weekLabel(start).replace('Semana del ', '') });
+  }
+  const cats = ['trabajadores', 'limpieza', 'orden'].map(type => {
+    const areas = db.areas.map(a => {
+      const vals = weeks.map(w => {
+        const ps = db.audits.filter(x => x.date >= w.start && x.date <= w.end)
+          .flatMap(x => x.areas.filter(r => r.areaId === a.id && !r.notEvaluated).flatMap(r => (r.blocks || []).filter(b => b.type === type).map(blockPct)))
+          .filter(v => v !== null);
+        return avg(ps);
+      });
+      return { id: a.id, name: a.name, vals };
+    }).filter(a => a.vals.some(v => v !== null));
+    return { type, name: CAT_LABEL[type], areas };
+  });
+  return { weeks, cats };
+}
+
+/* Semana más antigua = tono más suave; la más reciente = el más intenso (una sola tonalidad, ordenada). */
+const weekTone = (i, n) => `rgba(47,107,255,${(n === 1 ? 1 : 0.38 + 0.62 * i / (n - 1)).toFixed(2)})`;
+
+function weeksCompareHTML() {
+  const n = ui.sum.weeks, d = weeksCompareData(n);
+  const legend = d.weeks.map((w, i) => `<span class="cmp-key"><i style="background:${weekTone(i, n)}"></i>${esc(w.label)}</span>`).join('');
+  const card = c => `<div class="card panel cmp"><h3>${esc(c.name)}<small>por área</small></h3>
+    ${c.areas.length ? c.areas.map(a => `<div class="cmp-row"><span class="cmp-name" title="${esc(a.name)}">${esc(a.name)}</span>
+      <div class="cmp-bars">${a.vals.map((v, i) => `<div class="cmp-line" title="${esc(a.name)} · ${esc(d.weeks[i].label)}: ${pctText(v)}">
+        <div class="bar-track thin"><div class="bar-fill" style="width:${v ?? 0}%;background:${weekTone(i, n)}"></div><span class="bar-goal" style="left:${db.settings.goal}%"></span></div>
+        <span class="bar-val ${v === null ? 'p-none' : ''}">${v === null ? 'Sin datos' : pctText(v)}</span></div>`).join('')}</div></div>`).join('')
+      : '<p class="muted">Sin evaluaciones de esta categoría en estas semanas.</p>'}</div>`;
+  return `<div class="section-head cmp-head"><h2>Comparativa por semanas</h2>
+      <div class="seg" role="group" aria-label="Semanas a comparar">${[2, 3, 4].map(k => `<button class="seg-btn ${n === k ? 'on' : ''}" data-action="cmp-weeks" data-n="${k}">${k} semanas</button>`).join('')}</div></div>
+    <div class="cmp-legend">${legend}<span class="muted">La línea vertical marca la meta (${db.settings.goal}%). Termina en la semana de la fecha elegida arriba.</span></div>
+    <div class="grid-3">${d.cats.map(card).join('')}</div>`;
+}
+
 function viewResumen() {
   const s = summaryData(), p = ui.sum.period;
   const periods = [['day', 'Día'], ['week', 'Semana'], ['month', 'Mes'], ['year', 'Año']];
@@ -785,7 +829,7 @@ function viewResumen() {
     <button class="btn sm" data-action="period-nav" data-dir="1" aria-label="Período siguiente">›</button>
     <div class="range"><strong>${esc(periodLabel(p, s.from, s.to))}</strong>Meta de cumplimiento: ${db.settings.goal}%</div>
     <button class="btn primary" data-action="report" ${s.items.length ? '' : 'disabled'}>Generar informe</button></div>`;
-  if (!s.items.length) return head + `<div class="card empty"><h3>Sin auditorías en este período</h3><p>Cambia el período o la fecha, o guarda una auditoría desde Inicio.</p></div>`;
+  if (!s.items.length) return head + `<div class="card empty"><h3>Sin auditorías en este período</h3><p>Cambia el período o la fecha, o guarda una auditoría desde Inicio.</p></div>${weeksCompareHTML()}`;
   const okN = s.entries.filter(e => e.status === 'ok').length;
   return head + `<div class="kpis">
     <div class="card kpi"><div class="label">Cumplimiento general</div><div class="value">${pctText(s.total)}</div><div class="sub2">${pillHTML(s.total)}</div></div>
@@ -800,7 +844,7 @@ function viewResumen() {
     <div class="grid-2">
       <div class="card panel"><h3>Hallazgos más repetidos</h3>${s.topFindings.length ? `<ul class="rank">${s.topFindings.map(([k, n]) => { const [t, a] = k.split('||'); return `<li><span>${esc(t)}<small>${esc(a)}</small></span><span class="count">${n}</span></li>`; }).join('')}</ul>` : '<p class="muted">Sin no conformidades en el período.</p>'}</div>
       <div class="card panel"><h3>Personal con más hallazgos</h3>${s.topWorkers.length ? `<ul class="rank">${s.topWorkers.map(([w, n]) => `<li><span>${esc(w)}</span><span class="count">${n}</span></li>`).join('')}</ul>` : '<p class="muted">Sin hallazgos asociados a personal.</p>'}</div>
-    </div>`;
+    </div>${weeksCompareHTML()}`;
 }
 
 /* ----- Informe ----- */
@@ -1140,6 +1184,7 @@ document.addEventListener('click', async e => {
     case 'hist-clear': ui.hist = { q: '', area: '', from: '', to: '', only: '' }; render(true); break;
     case 'export-csv': exportCsv(); break;
     /* Resumen */
+    case 'cmp-weeks': ui.sum.weeks = Number(el.dataset.n) || 3; render(true); break;
     case 'period': ui.sum.period = el.dataset.p; render(true); break;
     case 'period-nav': shiftRef(Number(el.dataset.dir)); render(true); break;
     case 'report': openReport(); break;

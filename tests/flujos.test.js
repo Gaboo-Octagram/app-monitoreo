@@ -191,6 +191,11 @@ const check = (n, c) => { console.log((c ? 'OK   ' : 'FALLA') + ' ' + n); if (!c
   for (const p of ['day', 'week', 'month', 'year']) { await go('#/resumen'); click($(`[data-action="period"][data-p="${p}"]`)); await tick(); check(`Resumen ${p} renderiza`, !!$('.kpis') || !!$('.empty')); }
   click($('[data-action="period"][data-p="month"]')); await tick();
   check('Resumen mes: KPIs + tendencia + barras', !!$('.kpis') && !!$('svg.trend') && $$('.bar-row').length >= 4);
+  check('Comparativa: 3 categorías con 3 semanas por defecto', $$('.cmp').length === 3 && $$('.cmp-row')[0].querySelectorAll('.cmp-line').length === 3);
+  click($('[data-action="cmp-weeks"][data-n="4"]')); await tick();
+  check('Comparativa: selector a 4 semanas', $$('.cmp-row')[0].querySelectorAll('.cmp-line').length === 4 && $$('.cmp-key').length === 4);
+  click($('[data-action="cmp-weeks"][data-n="2"]')); await tick();
+  check('Comparativa: selector a 2 semanas', $$('.cmp-row')[0].querySelectorAll('.cmp-line').length === 2);
   click($('[data-action="period"][data-p="month"]')); await tick();
   click($('[data-action="report"]')); await tick();
   check('Informe: vista previa y días', !!$('#reportPreview .report') && $$('[data-rday]').length > 0);
