@@ -78,6 +78,9 @@ Actualizado: 28-10-2026. Estado actual: versión 2 funcionando, con datos guarda
 - Prueba `flujos.test.js` ya no depende del día del mes. Nueva: `tests/sync-nube.test.js`.
 - Límites conocidos: las fotos traídas de la nube son enlaces temporales (1 h) que se renuevan al actualizar; sin internet pueden no verse. Las fotos aún se guardan en el navegador al evaluar.
 
+### En curso (rama `fase-4-resumen-semanas`)
+- **Resumen — comparativa por semanas:** tres gráficos (Trabajadores, Limpieza, Orden), cada uno con sus áreas y una barra por semana (de la más antigua, más suave, a la más reciente, más intensa), con la meta marcada. Selector de 2, 3 o 4 semanas; termina en la semana de la fecha de referencia. Se mantiene el resto del Resumen. Aparece aunque el período elegido arriba no tenga auditorías.
+
 ### Pendiente
 - Fase 1: escribir las auditorías en Supabase (guardado por partes), permisos
   por rol en la app y gestión de usuarios desde la interfaz.
