@@ -142,26 +142,35 @@
     /* 1. Una auditoría por local y día: si ya existe, se actualiza. */
     const { data: existing, error: findErr } = await client
       .from('audits')
-      .select('id,status')
+      .select('id,status,updated_at')
       .eq('store_id', profile.store_id)
       .eq('audit_date', audit.date)
       .maybeSingle();
     if (findErr) throw friendly(findErr, 'audits');
 
-    let auditId = null;
+    let auditId = null, updatedAt = null;
     if (existing) {
-      const { error: upErr } = await client
+      /* Otro dispositivo guardó este día después de lo último que bajamos: no se pisa. */
+      if (audit.cloudUpdatedAt && existing.updated_at && existing.updated_at > audit.cloudUpdatedAt) {
+        return { skipped: 'conflicto', cloudId: existing.id };
+      }
+      if (!audit.cloudUpdatedAt && !audit.cloudId && existing.id) {
+        return { skipped: 'conflicto', cloudId: existing.id };
+      }
+      const { data: upRow, error: upErr } = await client
         .from('audits')
         .update({
           evaluator_name: audit.evaluator || (db && db.settings && db.settings.evaluator) || '',
           goal
         })
-        .eq('id', existing.id);
+        .eq('id', existing.id)
+        .select('id,updated_at')
+        .single();
       if (upErr) {
         if (/ya fue enviada|no se puede editar|no está pendiente/i.test(upErr.message || '')) return { skipped: 'enviada' };
         throw friendly(upErr, 'audits');
       }
-      auditId = existing.id;
+      auditId = existing.id; updatedAt = upRow && upRow.updated_at;
     } else {
       const { data: row, error: insErr } = await client
         .from('audits')
@@ -173,10 +182,10 @@
           evaluator_name: audit.evaluator || (db && db.settings && db.settings.evaluator) || '',
           goal
         })
-        .select('id')
+        .select('id,updated_at')
         .single();
       if (insErr) throw friendly(insErr, 'audits');
-      auditId = row.id;
+      auditId = row.id; updatedAt = row.updated_at;
     }
 
     /* 2. Reemplaza el contenido anterior de esa auditoría. */
@@ -290,6 +299,7 @@
     return {
       ok: true,
       auditId,
+      updatedAt,
       entries: entryRows.length,
       photos: photoRows.length,
       failedPhotos

@@ -399,12 +399,18 @@ function mergeResult(old, nw) {
 
 /* Sube la auditoría a la nube después de guardarla aquí. Si algo falla,
    la copia del navegador ya está a salvo: solo se avisa. */
-async function syncToCloud(aud) {
+async function syncToCloud(aud, retried) {
   if (!window.SupabaseWrite) return { skipped: 'sin-cliente' };
   try {
     const r = await SupabaseWrite.saveAudit(aud, db);
+    if (r && r.skipped === 'conflicto' && !retried) {
+      /* Otro dispositivo guardó este día: se baja, se une con lo de aquí y se reintenta. */
+      await pullCloudAudits(true);
+      return syncToCloud(aud, true);
+    }
     if (r && r.ok) {
       aud.cloudId = r.auditId;
+      aud.cloudUpdatedAt = r.updatedAt || aud.cloudUpdatedAt;
       aud.cloudSyncedAt = new Date().toISOString();
       try { await AppData.saveDB(db); } catch (e) { /* la copia local ya existe */ }
       if (r.failedPhotos) toast(`No se ${plural(r.failedPhotos, 'pudo', 'pudieron')} subir ${r.failedPhotos} ${plural(r.failedPhotos, 'foto', 'fotos')}.`, 'error');
@@ -453,6 +459,7 @@ async function saveAudit() {
     const merged = db.areas.map((a, i) => { const old = aud.areas.find(r => r.areaId === a.id); return old ? mergeResult(old, results[i]) : results[i]; });
     const extra = aud.areas.filter(r => !db.areas.some(a => a.id === r.areaId));
     aud.areas = [...merged, ...extra]; aud.ts = now; aud.evaluator = db.settings.evaluator || aud.evaluator || '';
+    delete aud.cloudSyncedAt; delete aud.cloudSkipped;   // cambió: hay que volver a subirla
   } else {
     aud = { id: uid(), date: day, ts: now, evaluator: db.settings.evaluator, areas: results };
     db.audits.push(aud);
@@ -478,6 +485,7 @@ function viewHistorial() {
     <label class="field"><span>Resultado</span><select data-hist="only"><option value="">Todos</option><option value="nok" ${f.only === 'nok' ? 'selected' : ''}>Con hallazgos</option><option value="ok" ${f.only === 'ok' ? 'selected' : ''}>Sin hallazgos</option></select></label>
     <button class="btn" data-action="hist-clear">Limpiar filtros</button>
     <button class="btn" data-action="export-csv" title="Descarga las auditorías filtradas para Excel">Exportar CSV</button>
+    ${authRole === 'monitora' || authRole === 'administrador' ? '<button class="btn" data-action="hist-refresh" title="Trae lo guardado desde otros dispositivos">Actualizar desde la nube</button>' : ''}
   </div><div id="histList">${histListHTML()}</div>`;
 }
 
@@ -1107,6 +1115,7 @@ document.addEventListener('click', async e => {
       } catch (e) { toast((e && e.message) || 'No se pudo guardar la conformidad.', 'error'); }
       break;
     }
+    case 'hist-refresh': { const r = await pullCloudAudits(true); render(true); toast(r.changed ? 'Historial actualizado.' : 'Ya estaba al día.'); break; }
     case 'cloud-wipe': await wipeCloudHistory(); break;
     case 'toggle-grp': {
       const key = el.dataset.key, g = ui.groups, wasOpen = el.getAttribute('aria-expanded') === 'true';
@@ -1256,7 +1265,10 @@ function flushOnExit() {
   saveDrafts();
 }
 window.addEventListener('pagehide', flushOnExit);
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushOnExit(); });
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') flushOnExit();
+  else if (authRole === 'monitora' || authRole === 'administrador') pullCloudAudits();
+});
 
 /* ---------- Reintento hacia la nube ----------
    Si una auditoría quedó sin subir (sin internet, sin sesión o un error
@@ -1271,7 +1283,8 @@ async function syncPending(limit = 5) {
     let r;
     try { r = await SupabaseWrite.saveAudit(aud, db); }
     catch (e) { break; }
-    if (r && r.ok) { aud.cloudId = r.auditId; aud.cloudSyncedAt = new Date().toISOString(); delete aud.cloudSkipped; synced++; }
+    if (r && r.skipped === 'conflicto') { await pullCloudAudits(true); try { r = await SupabaseWrite.saveAudit(aud, db); } catch (e) { break; } }
+    if (r && r.ok) { aud.cloudId = r.auditId; aud.cloudUpdatedAt = r.updatedAt || aud.cloudUpdatedAt; aud.cloudSyncedAt = new Date().toISOString(); delete aud.cloudSkipped; synced++; }
     else if (r && ['enviada', 'rol', 'sin-local'].includes(r.skipped)) aud.cloudSkipped = r.skipped;
     else break;
   }
@@ -1286,6 +1299,50 @@ if (window.sb && sb.auth && sb.auth.onAuthStateChange) {
   sb.auth.onAuthStateChange((event, session) => {
     if (session) setTimeout(() => syncPending().catch(() => {}), 1200);
   });
+}
+
+/* ---------- Historial desde la nube (monitora y administrador) ----------
+   La nube es la copia compartida entre dispositivos (tablet y computador).
+   Al entrar, al volver a la app y con el botón "Actualizar" se baja y se une:
+   - día solo en la nube → se agrega;
+   - día igual y sin cambios locales → se toma el de la nube (renueva las fotos);
+   - día con cambios locales y otro dispositivo guardó antes → se unen por área
+     (lo de este dispositivo manda) y se vuelve a subir;
+   - día que ya no existe en la nube (p. ej. borrado total) → se quita de aquí. */
+let lastPull = 0, pulling = false;
+const hasUrlPhotos = a => a.areas.some(r => !r.notEvaluated && (r.blocks || []).some(b => b.entries.some(e => (e.photos || []).some(p => /^https?:/.test(p)))));
+
+async function pullCloudAudits(force) {
+  if (headMode || pulling || !window.SupabaseRead || !window.sb) return { changed: false };
+  if (!force && Date.now() - lastPull < 60000) return { changed: false };
+  pulling = true;
+  let changed = false;
+  try {
+    const list = await SupabaseRead.audits();
+    lastPull = Date.now();
+    list.forEach(c => {
+      const l = db.audits.find(a => a.date === c.date);
+      if (!l) { db.audits.push(c); changed = true; return; }
+      const dirty = !l.cloudSyncedAt, newer = !l.cloudUpdatedAt || c.updatedAt > l.cloudUpdatedAt;
+      if (!dirty) {
+        if (newer || hasUrlPhotos(l)) { Object.assign(l, c, { id: l.id }); changed = true; }
+      } else if (newer) {
+        const byId = new Map(l.areas.map(r => [r.areaId, r]));
+        const merged = c.areas.map(ca => byId.has(ca.areaId) ? mergeResult(ca, byId.get(ca.areaId)) : ca);
+        const extra = l.areas.filter(r => !c.areas.some(ca => ca.areaId === r.areaId));
+        l.areas = [...merged, ...extra]; l.cloudId = c.id; l.cloudUpdatedAt = c.updatedAt; changed = true;
+      }
+    });
+    const oldest = list.length ? list[list.length - 1].date : '';
+    const inCloud = new Set(list.map(c => c.date));
+    const before = db.audits.length;
+    db.audits = db.audits.filter(a => !(a.cloudSyncedAt && a.cloudId && !inCloud.has(a.date) && (list.length < 120 || a.date >= oldest)));
+    if (db.audits.length !== before) changed = true;
+    if (changed) { await save(); render(true); }
+  } catch (e) {
+    if (force) toast((e && e.message) || 'No se pudo actualizar desde la nube.', 'error');
+  } finally { pulling = false; }
+  return { changed };
 }
 
 /* Borrado total del historial en la nube: respaldo → frase de confirmación → borrado. */
@@ -1384,7 +1441,9 @@ window.addEventListener('sc-auth', () => {
   else if (headMode) location.reload();   // vuelve a cargar los datos locales de este navegador
   else if (role) {
     refreshConformities();
-    if (role === 'monitora' || role === 'administrador') adoptCloudCatalog();
+    if (role === 'monitora' || role === 'administrador') {
+      adoptCloudCatalog().finally(() => pullCloudAudits(true).then(() => syncPending().catch(() => {})));
+    }
   }
 });
 

@@ -178,10 +178,10 @@
   /* ---------- Auditorías completas, en el formato que usa la app ----------
      Las usa la jefa de calidad (no tiene copia local). Las fotos son
      enlaces firmados temporales (1 hora). Incluye su conformidad, si hay. */
-  const AUDIT_COLUMNS = 'id,audit_date,evaluator_name,goal,created_at,'
+  const AUDIT_COLUMNS = 'id,audit_date,evaluator_name,goal,created_at,updated_at,'
     + 'audit_conformity(note,reviewer_name,updated_at),'
     + 'audit_area_results(id,area_id,area_name,boss_name,not_evaluated,total_items,done_items,sort_order,'
-    + 'audit_blocks(id,block_type,label,sort_order,'
+    + 'audit_blocks(id,block_type,label,source_block_id,sort_order,'
     + 'audit_entries(id,item_id,param_id,worker_id,worker_name,item_text,status,observation,created_at,audit_photos(storage_path))),'
     + 'audit_absences(worker_id,worker_name))';
 
@@ -218,7 +218,7 @@
         const blocks = (r.audit_blocks || []).slice().sort(bySort).map(b => {
           const isW = b.block_type === 'trabajadores';
           return {
-            id: b.id, type: b.block_type, label: b.label,
+            id: isW ? 'workers' : (b.source_block_id || b.id), type: b.block_type, label: b.label,
             entries: (b.audit_entries || []).slice().sort(byCreated).map(e => ({
               k: e.param_id || e.item_id || e.id, w: e.worker_id || e.worker_name, worker: e.worker_name || '',
               text: e.item_text, status: e.status, obs: e.observation || '',
@@ -234,7 +234,7 @@
         return { ...base, blocks };
       });
       return {
-        id: a.id, cloudId: a.id, cloudSyncedAt: a.created_at, date: a.audit_date, ts: a.created_at,
+        id: a.id, cloudId: a.id, cloudSyncedAt: a.updated_at, cloudUpdatedAt: a.updated_at, updatedAt: a.updated_at, date: a.audit_date, ts: a.created_at,
         evaluator: a.evaluator_name || '', goal: a.goal, areas,
         conformity: conf ? { note: conf.note || '', by: conf.reviewer_name || '', at: conf.updated_at } : null
       };
