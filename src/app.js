@@ -801,22 +801,59 @@ function weeksCompareData(n) {
   return { weeks, cats };
 }
 
-/* Semana más antigua = tono más suave; la más reciente = el más intenso (una sola tonalidad, ordenada). */
-const weekTone = (i, n) => `rgba(47,107,255,${(n === 1 ? 1 : 0.38 + 0.62 * i / (n - 1)).toFixed(2)})`;
+/* Una línea por semana (de la más antigua a la más reciente). Colores validados para modo oscuro
+   (distinguibles también con daltonismo) y, además, un símbolo distinto por semana. */
+const WEEK_COLORS = ['#3987e5', '#d95926', '#199e70', '#c98500'];
+const wkColor = (i, n) => WEEK_COLORS[(WEEK_COLORS.length - n) + i] || WEEK_COLORS[i];   // la semana más reciente siempre usa el último color
+const wkMarker = (i, x, y, r, color, attrs = '') => {
+  const f = `fill="${color}" stroke="var(--surface)" stroke-width="1.5" ${attrs}`;
+  return [`<circle cx="${x}" cy="${y}" r="${r}" ${f}/>`,
+    `<rect x="${x - r}" y="${y - r}" width="${2 * r}" height="${2 * r}" rx="1.5" ${f}/>`,
+    `<path d="M${x} ${y - r - 1}L${x + r + 1} ${y}L${x} ${y + r + 1}L${x - r - 1} ${y}Z" ${f}/>`,
+    `<path d="M${x} ${y - r - 1}L${x + r + 1} ${y + r}L${x - r - 1} ${y + r}Z" ${f}/>`][i % 4];
+};
+const wrapName = (name, max = 11) => {
+  const words = name.split(' '), lines = [''];
+  words.forEach(w => { const l = lines[lines.length - 1]; if (l && (l + ' ' + w).length > max) lines.push(w); else lines[lines.length - 1] = l ? l + ' ' + w : w; });
+  return lines.slice(0, 3);
+};
+
+const k_B = cat => cat.areas.length > 4 ? 98 : 58;
+function weeksLineChart(cat, d) {
+  const W = 460, H = 330, L = 34, R = 12, T = 20, B = k_B(cat), n = d.weeks.length, k = cat.areas.length;
+  if (!k) return '<p class="muted">Sin evaluaciones de esta categoría en estas semanas.</p>';
+  const all = cat.areas.flatMap(a => a.vals).filter(v => v !== null), goal = db.settings.goal;
+  const lo = Math.max(0, Math.min(Math.floor((Math.min(...all, goal) - 6) / 10) * 10, 80));   // el eje no empieza en 0: se acerca a los datos
+  const x = i => L + (i + 0.5) * (W - L - R) / k, y = v => T + (100 - v) * (H - T - B) / (100 - lo);
+  const ticks = []; for (let v = lo; v <= 100; v += (100 - lo) > 50 ? 20 : 10) ticks.push(v); if (ticks[ticks.length - 1] !== 100) ticks.push(100);
+  const grid = ticks.map(v => `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" class="g"/><text x="${L - 6}" y="${y(v) + 4}" text-anchor="end" class="ax">${v}</text>`).join('');
+  const rot = k > 4;   // con muchas áreas los nombres se inclinan para no pisarse
+  const xl = cat.areas.map((a, i) => rot
+    ? `<text transform="translate(${x(i)} ${H - B + 14}) rotate(-35)" text-anchor="end" class="ax">${esc(a.name)}</text>`
+    : `<text x="${x(i)}" y="${H - B + 16}" text-anchor="middle" class="ax">${wrapName(a.name).map((t, j) => `<tspan x="${x(i)}" dy="${j ? 14 : 0}">${esc(t)}</tspan>`).join('')}</text>`).join('');
+  const lines = d.weeks.map((w, wi) => {
+    const col = wkColor(wi, n), pts = cat.areas.map((a, i) => ({ i, v: a.vals[wi], a }));
+    let path = '', open = false;
+    pts.forEach(pt => { if (pt.v === null) { open = false; return; } path += `${open ? 'L' : 'M'}${x(pt.i).toFixed(1)} ${y(pt.v).toFixed(1)}`; open = true; });
+    const have = pts.filter(pt => pt.v !== null), hi = have.reduce((m, pt) => (m === null || pt.v > m.v ? pt : m), null), lo = have.reduce((m, pt) => (m === null || pt.v < m.v ? pt : m), null);
+    const last = wi === n - 1;
+    const marks = have.map(pt => `<g class="wk-pt">${wkMarker(wi, +x(pt.i).toFixed(1), +y(pt.v).toFixed(1), last ? 4.5 : 3.5, col)}<title>${esc(pt.a.name)} · ${esc(w.label)}: ${pctText(pt.v)}</title></g>`).join('');
+    const lab = (pt, dy) => pt ? `<text x="${x(pt.i).toFixed(1)}" y="${(y(pt.v) + dy).toFixed(1)}" text-anchor="middle" class="vl" fill="${col}">${Math.round(pt.v)}%</text>` : '';
+    return `<g class="wk wk-${wi}"><path d="${path}" fill="none" stroke="${col}" stroke-width="${last ? 2.5 : 1.75}" stroke-linejoin="round" stroke-linecap="round" class="wk-line"/>${marks}${lab(hi, -9)}${hi !== lo ? lab(lo, 16) : ''}</g>`;
+  }).join('');
+  return `<svg class="cmp-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(cat.name)}: cumplimiento por área, últimas ${n} semanas">
+    ${grid}<line x1="${L}" x2="${W - R}" y1="${y(goal)}" y2="${y(goal)}" class="goal"/>${xl}${lines}</svg>`;
+}
 
 function weeksCompareHTML() {
   const n = ui.sum.weeks, d = weeksCompareData(n);
-  const legend = d.weeks.map((w, i) => `<span class="cmp-key"><i style="background:${weekTone(i, n)}"></i>${esc(w.label)}</span>`).join('');
-  const card = c => `<div class="card panel cmp"><h3>${esc(c.name)}<small>por área</small></h3>
-    ${c.areas.length ? c.areas.map(a => `<div class="cmp-row"><span class="cmp-name" title="${esc(a.name)}">${esc(a.name)}</span>
-      <div class="cmp-bars">${a.vals.map((v, i) => `<div class="cmp-line" title="${esc(a.name)} · ${esc(d.weeks[i].label)}: ${pctText(v)}">
-        <div class="bar-track thin"><div class="bar-fill" style="width:${v ?? 0}%;background:${weekTone(i, n)}"></div><span class="bar-goal" style="left:${db.settings.goal}%"></span></div>
-        <span class="bar-val ${v === null ? 'p-none' : ''}">${v === null ? 'Sin datos' : pctText(v)}</span></div>`).join('')}</div></div>`).join('')
-      : '<p class="muted">Sin evaluaciones de esta categoría en estas semanas.</p>'}</div>`;
+  const order = ['orden', 'limpieza', 'trabajadores'];
+  const legend = d.weeks.map((w, i) => `<span class="cmp-key"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">${wkMarker(i, 7, 7, 4, wkColor(i, n))}</svg>${esc(w.label)}</span>`).join('');
+  const card = t => { const c = d.cats.find(x => x.type === t); return `<div class="card panel cmp"><h3>${esc(c.name)}: Cumplimiento por Área</h3>${weeksLineChart(c, d)}</div>`; };
   return `<div class="section-head cmp-head"><h2>Comparativa por semanas</h2>
       <div class="seg" role="group" aria-label="Semanas a comparar">${[2, 3, 4].map(k => `<button class="seg-btn ${n === k ? 'on' : ''}" data-action="cmp-weeks" data-n="${k}">${k} semanas</button>`).join('')}</div></div>
-    <div class="cmp-legend">${legend}<span class="muted">La línea vertical marca la meta (${db.settings.goal}%). Termina en la semana de la fecha elegida arriba.</span></div>
-    <div class="grid-3">${d.cats.map(card).join('')}</div>`;
+    <div class="cmp-legend">${legend}<span class="cmp-goal"><i></i>Meta ${db.settings.goal}%</span><span class="muted">Termina en la semana de la fecha elegida arriba. La más reciente va con la línea más gruesa. El eje parte cerca de los datos, no en 0.</span></div>
+    <div class="grid-3">${order.map(card).join('')}</div>`;
 }
 
 function viewResumen() {
@@ -836,14 +873,12 @@ function viewResumen() {
     <div class="card kpi"><div class="label">Auditorías (días)</div><div class="value">${s.audits.length}</div><div class="sub2">${s.items.length} ${plural(s.items.length, 'evaluación de área', 'evaluaciones de área')}</div></div>
     <div class="card kpi"><div class="label">Checks evaluados</div><div class="value">${s.entries.length}</div><div class="sub2">${okN} conformes</div></div>
     <div class="card kpi"><div class="label">No conformidades</div><div class="value" style="color:${s.nokEntries.length ? 'var(--nok)' : 'inherit'}">${s.nokEntries.length}</div><div class="sub2">hallazgos registrados</div></div></div>
-    <div class="grid-2">
-      <div class="card panel"><h3>Cumplimiento por área<small>de menor a mayor</small></h3>${s.byArea.map(a => barRow(a.name, a.pct)).join('')}<p class="legend-note">La línea vertical marca la meta (${db.settings.goal}%).</p></div>
-      <div class="card panel"><h3>Cumplimiento por categoría</h3>${s.byCat.map(c => barRow(c.name, c.pct)).join('')}
-        ${p === 'day' ? '' : `<h3 style="margin-top:22px">Tendencia<small>${p === 'year' ? 'por mes' : 'por día'}</small></h3>${trendSVG(trendPoints(s))}`}</div>
-    </div>
-    <div class="grid-2">
+    <div class="mid">
       <div class="card panel"><h3>Hallazgos más repetidos</h3>${s.topFindings.length ? `<ul class="rank">${s.topFindings.map(([k, n]) => { const [t, a] = k.split('||'); return `<li><span>${esc(t)}<small>${esc(a)}</small></span><span class="count">${n}</span></li>`; }).join('')}</ul>` : '<p class="muted">Sin no conformidades en el período.</p>'}</div>
       <div class="card panel"><h3>Personal con más hallazgos</h3>${s.topWorkers.length ? `<ul class="rank">${s.topWorkers.map(([w, n]) => `<li><span>${esc(w)}</span><span class="count">${n}</span></li>`).join('')}</ul>` : '<p class="muted">Sin hallazgos asociados a personal.</p>'}</div>
+      <div class="card panel mid-wide"><h3>Cumplimiento por categoría</h3>${s.byCat.map(c => barRow(c.name, c.pct)).join('')}
+        ${p === 'day' ? '' : `<h3 style="margin-top:22px">Tendencia<small>${p === 'year' ? 'por mes' : 'por día'}</small></h3>${trendSVG(trendPoints(s))}`}</div>
+    </div>
     </div>${weeksCompareHTML()}`;
 }
 
