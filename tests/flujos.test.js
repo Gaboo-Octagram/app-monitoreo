@@ -194,7 +194,7 @@ const check = (n, c) => { console.log((c ? 'OK   ' : 'FALLA') + ' ' + n); if (!c
   click($('[data-action="period"][data-p="month"]')); await tick();
   click($('[data-action="report"]')); await tick();
   check('Informe: vista previa y días', !!$('#reportPreview .report') && $$('[data-rday]').length > 0);
-  const days = $$('[data-rday]'); days[0].checked = false; days[0].dispatchEvent(new w.Event('change', { bubbles: true })); await tick();
+  const days = $$('[data-rday]'); if (days.length > 2) { days[0].checked = false; days[0].dispatchEvent(new w.Event('change', { bubbles: true })); await tick(); }  // a comienzos de mes hay pocos días
   click(foot(1)); await tick();
   check('Informe: imprimir', w.__printed === true && !!$('#printArea .report'));
   click(foot(0)); await tick();

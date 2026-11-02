@@ -71,6 +71,13 @@ Actualizado: 28-10-2026. Estado actual: versión 2 funcionando, con datos guarda
 - "Borrar todo" local ya no borra el catálogo cuando este viene de la nube.
 - Falta: validación real con los tres roles, publicar (Cloudflare Pages), formato del PDF, listas reales.
 
+### En curso (rama `fase-3-sync-nube`)
+- **Historial compartido entre dispositivos** (monitora y administrador): al entrar, al volver a la app y con el botón "Actualizar desde la nube" se bajan las auditorías de la nube y se unen con las de este dispositivo. Un día solo en la nube se agrega; si dos dispositivos tocaron el mismo día se unen por área (manda lo de este dispositivo) y se vuelve a subir; lo borrado en la nube desaparece de aquí.
+- **No se pisa lo de otro dispositivo:** al subir, si la nube cambió después de lo último que se bajó, se frena, se baja, se une y se reintenta.
+- Corregido: una auditoría editada el mismo día ahora se vuelve a marcar como pendiente de subir si la subida falla.
+- Prueba `flujos.test.js` ya no depende del día del mes. Nueva: `tests/sync-nube.test.js`.
+- Límites conocidos: las fotos traídas de la nube son enlaces temporales (1 h) que se renuevan al actualizar; sin internet pueden no verse. Las fotos aún se guardan en el navegador al evaluar.
+
 ### Pendiente
 - Fase 1: escribir las auditorías en Supabase (guardado por partes), permisos
   por rol en la app y gestión de usuarios desde la interfaz.
