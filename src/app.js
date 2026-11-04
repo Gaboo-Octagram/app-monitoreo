@@ -818,16 +818,20 @@ const wrapName = (name, max = 11) => {
   return lines.slice(0, 3);
 };
 
-const k_B = cat => cat.areas.length > 4 ? 98 : 58;
+/* Hasta 7 áreas: tres gráficos en una fila. Con más, se alargan (más ancho según la cantidad de áreas)
+   y cada gráfico ocupa su propia fila: los demás pasan hacia abajo. */
+const COMPARE_MAX_ROW = 7;
+const compareWide = d => Math.max(...d.cats.map(c => c.areas.length)) > COMPARE_MAX_ROW;
 function weeksLineChart(cat, d) {
-  const W = 460, H = 330, L = 34, R = 12, T = 20, B = k_B(cat), n = d.weeks.length, k = cat.areas.length;
+  const k = cat.areas.length, wide = compareWide(d), n = d.weeks.length;
+  const W = wide ? 90 * k + 60 : 460, H = wide ? 340 : 330, L = 34, R = 12, T = 20, B = (!wide && k > 4) ? 98 : 58;
   if (!k) return '<p class="muted">Sin evaluaciones de esta categoría en estas semanas.</p>';
   const all = cat.areas.flatMap(a => a.vals).filter(v => v !== null), goal = db.settings.goal;
   const lo = Math.max(0, Math.min(Math.floor((Math.min(...all, goal) - 6) / 10) * 10, 80));   // el eje no empieza en 0: se acerca a los datos
   const x = i => L + (i + 0.5) * (W - L - R) / k, y = v => T + (100 - v) * (H - T - B) / (100 - lo);
   const ticks = []; for (let v = lo; v <= 100; v += (100 - lo) > 50 ? 20 : 10) ticks.push(v); if (ticks[ticks.length - 1] !== 100) ticks.push(100);
   const grid = ticks.map(v => `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" class="g"/><text x="${L - 6}" y="${y(v) + 4}" text-anchor="end" class="ax">${v}</text>`).join('');
-  const rot = k > 4;   // con muchas áreas los nombres se inclinan para no pisarse
+  const rot = !wide && k > 4;   // con muchas áreas los nombres se inclinan para no pisarse
   const xl = cat.areas.map((a, i) => rot
     ? `<text transform="translate(${x(i)} ${H - B + 14}) rotate(-35)" text-anchor="end" class="ax">${esc(a.name)}</text>`
     : `<text x="${x(i)}" y="${H - B + 16}" text-anchor="middle" class="ax">${wrapName(a.name).map((t, j) => `<tspan x="${x(i)}" dy="${j ? 14 : 0}">${esc(t)}</tspan>`).join('')}</text>`).join('');
@@ -853,7 +857,7 @@ function weeksCompareHTML() {
   return `<div class="section-head cmp-head"><h2>Comparativa por semanas</h2>
       <div class="seg" role="group" aria-label="Semanas a comparar">${[2, 3, 4].map(k => `<button class="seg-btn ${n === k ? 'on' : ''}" data-action="cmp-weeks" data-n="${k}">${k} semanas</button>`).join('')}</div></div>
     <div class="cmp-legend">${legend}<span class="cmp-goal"><i></i>Meta ${db.settings.goal}%</span><span class="muted">Termina en la semana de la fecha elegida arriba. La más reciente va con la línea más gruesa. El eje parte cerca de los datos, no en 0.</span></div>
-    <div class="grid-3">${order.map(card).join('')}</div>`;
+    <div class="grid-3 ${compareWide(d) ? 'stack' : ''}">${order.map(card).join('')}</div>`;
 }
 
 function viewResumen() {

@@ -406,3 +406,5 @@ tr.invalid td{box-shadow:none;background:var(--nok-soft)}
 .grid-3{grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}
 .cmp-goal{display:inline-flex;align-items:center;gap:6px}
 .cmp-goal i{width:18px;border-top:1px dashed var(--muted);display:inline-block}
+
+.grid-3.stack{grid-template-columns:1fr}

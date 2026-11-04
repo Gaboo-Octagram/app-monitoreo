@@ -79,7 +79,8 @@ Actualizado: 28-10-2026. Estado actual: versión 2 funcionando, con datos guarda
 - Límites conocidos: las fotos traídas de la nube son enlaces temporales (1 h) que se renuevan al actualizar; sin internet pueden no verse. Las fotos aún se guardan en el navegador al evaluar.
 
 ### En curso (rama `fase-4-resumen-semanas`)
-- **Resumen — comparativa por semanas:** tres gráficos (Trabajadores, Limpieza, Orden), cada uno con sus áreas y una barra por semana (de la más antigua, más suave, a la más reciente, más intensa), con la meta marcada. Selector de 2, 3 o 4 semanas; termina en la semana de la fecha de referencia. Se mantiene el resto del Resumen. Aparece aunque el período elegido arriba no tenga auditorías.
+- **Resumen rediseñado** según la imagen de referencia: rankings a la izquierda, categoría + tendencia a la derecha, y abajo la **comparativa por semanas** en tres gráficos de líneas (Orden, Limpieza, Trabajadores) con una línea por semana, selector de 2/3/4 semanas, meta punteada y porcentajes solo en el máximo y el mínimo de cada línea. Aparece aunque el período de arriba esté vacío. Se quitó el panel "Cumplimiento por área".
+- Con más de 7 áreas, los gráficos se alargan y pasan uno debajo de otro. Prueba: `tests/layout-semanas.test.js`.
 
 ### Pendiente
 - Fase 1: escribir las auditorías en Supabase (guardado por partes), permisos
