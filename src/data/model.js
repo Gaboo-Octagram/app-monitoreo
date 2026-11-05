@@ -8,6 +8,7 @@
      { version, settings, params, bosses, workers, areas, audits }
    ===================================================================== */
 
+const REPORT_DEFAULTS = { reportTitle: 'INFORME SEMANAL DE CHECK LIST DE PRESENTACIÓN PRINCIPAL Y LIMPIEZA', reportRev: '01', reportDate: '25.02.2026', reportLogo: '' };
 const DEFAULT_PARAMS = ['Lavado de manos', 'Uso de mascarilla', 'Uso de cofia', 'Sin joyas', 'Uniforme', 'Sin heridas'];
 const DEFAULT_LIMPIEZA = ['Pisos limpios y sin residuos', 'Mesones y superficies sanitizadas', 'Equipos y utensilios limpios', 'Basureros vaciados y tapados', 'Sin señales de plagas'];
 const DEFAULT_ORDEN = ['Productos ordenados y rotulados', 'Pasillos y salidas despejados', 'Herramientas en su lugar', 'Productos sin contacto con el piso', 'Rotación de productos (FIFO) respetada'];
@@ -21,7 +22,7 @@ const blockLabel = b => `Check ${b.type === 'orden' ? 'Orden' : 'Limpieza'}${b.s
 function seed() {
   return {
     version: 2,
-    settings: { evaluator: '', store: '', goal: 90 },
+    settings: { evaluator: '', store: '', goal: 90, ...REPORT_DEFAULTS },
     params: mkItems(DEFAULT_PARAMS),
     bosses: [], workers: [],
     areas: DEFAULT_AREAS.map(name => ({ id: uid(), name, bossId: '', workerIds: [], blocks: defaultBlocks() })),
@@ -32,7 +33,7 @@ function seed() {
 /* Completa datos que falten o vengan de versiones anteriores. */
 function normalizeDB(d) {
   d = d && typeof d === 'object' ? d : seed();
-  d.settings = Object.assign({ evaluator: '', store: '', goal: 90 }, d.settings || {});
+  d.settings = Object.assign({ evaluator: '', store: '', goal: 90 }, REPORT_DEFAULTS, d.settings || {});
   if (!Array.isArray(d.params)) d.params = mkItems(DEFAULT_PARAMS);
   ['bosses', 'workers', 'areas', 'audits'].forEach(k => { if (!Array.isArray(d[k])) d[k] = []; });
   d.areas.forEach(a => {

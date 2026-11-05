@@ -288,9 +288,10 @@ function blockCardHTML(m, x, p) {
       return `<span class="crow-name ${bad ? 'invalid' : ''}">${esc(i.it.text)}</span>
         <button class="rd ok ${st === 'ok' ? 'on' : ''}" data-action="mark" data-s="ok" ${attrs} aria-pressed="${st === 'ok'}" aria-label="Conforme: ${esc(i.it.text)}"></button>
         <button class="rd nok ${st === 'nok' ? 'on' : ''}" data-action="mark" data-s="nok" ${attrs} aria-pressed="${st === 'nok'}" aria-label="No conforme: ${esc(i.it.text)}"></button>
-        ${st === 'nok' ? `<div class="full obs-row"><input type="text" class="obs-in ${bad ? 'invalid' : ''}" data-obs-input ${attrs} value="${esc(i.ans.o)}" placeholder="Observación / Acción Correctiva" aria-label="Observación">
+        ${st === 'nok' ? `<div class="full obs-row"><input type="text" class="obs-in ${bad ? 'invalid' : ''}" data-obs-input ${attrs} value="${esc(i.ans.o)}" placeholder="Observación" aria-label="Observación">
           <label class="photo-btn" title="Adjuntar foto" aria-label="Adjuntar foto">${CAMERA}<input type="file" accept="image/*" hidden data-photo-input ${attrs}></label>
-          ${thumbsHTML(i.ans.p, n => `data-action="rm-photo" ${attrs} data-i="${n}"`)}</div>` : ''}`;
+          ${thumbsHTML(i.ans.p, n => `data-action="rm-photo" ${attrs} data-i="${n}"`)}</div>
+        <div class="full obs-row"><input type="text" class="obs-in" data-corr-input ${attrs} value="${esc(i.ans.c || '')}" placeholder="Acción correctiva (inmediata)" aria-label="Acción correctiva"></div>` : ''}`;
     }).join('')}</div></div>`;
 }
 
@@ -305,7 +306,7 @@ function workerModal(areaId, wid) {
   const w = db.workers.find(x => x.id === wid);
   if (!db.params.length) return toast('Primero define los parámetros de personal en Configuración.', 'error');
   const cur = ((((drafts[areaId] || {}).workers || {})[wid]) || {}).items || {};
-  const st = {}; db.params.forEach(p => { const c = cur[p.id]; st[p.id] = c ? { s: c.s, o: c.o || '', p: [...(c.p || [])] } : null; });
+  const st = {}; db.params.forEach(p => { const c = cur[p.id]; st[p.id] = c ? { s: c.s, o: c.o || '', p: [], c: c.c || '' } : null; });
   let bad = null;
   const calc = () => pct(Object.values(st).filter(Boolean).map(x => ({ status: x.s })));
   const body = () => {
@@ -315,9 +316,8 @@ function workerModal(areaId, wid) {
         const x = st[p.id];
         return `<tr class="${bad === p.id ? 'invalid' : ''}"><td>${esc(p.text)}</td>${[['ok', 'Cumple'], ['nok', 'No cumple'], ['na', 'N/A']].map(([s, l]) =>
           `<td><button type="button" class="rd ${s} ${x && x.s === s ? 'on' : ''}" data-wp="${p.id}" data-s="${s}" aria-pressed="${!!(x && x.s === s)}" aria-label="${l}: ${esc(p.text)}"></button></td>`).join('')}</tr>
-          ${x && x.s === 'nok' ? `<tr class="obs-tr"><td colspan="4"><div class="obs-row"><input type="text" class="obs-in ${bad === p.id ? 'invalid' : ''}" data-wp-obs="${p.id}" value="${esc(x.o)}" placeholder="Observación / Acción Correctiva para ${esc(p.text)}" aria-label="Observación">
-            <label class="photo-btn" title="Adjuntar foto" aria-label="Adjuntar foto">${CAMERA}<input type="file" accept="image/*" hidden data-wp-photo="${p.id}"></label>
-            ${thumbsHTML(x.p, n => `data-wp-rm="${p.id}" data-i="${n}"`)}</div></td></tr>` : ''}`;
+          ${x && x.s === 'nok' ? `<tr class="obs-tr"><td colspan="4"><div class="obs-row"><input type="text" class="obs-in ${bad === p.id ? 'invalid' : ''}" data-wp-obs="${p.id}" value="${esc(x.o)}" placeholder="Observación para ${esc(p.text)}" aria-label="Observación"></div>
+            <div class="obs-row"><input type="text" class="obs-in" data-wp-corr="${p.id}" value="${esc(x.c || '')}" placeholder="Acción correctiva (inmediata)" aria-label="Acción correctiva"></div></td></tr>` : ''}`;
       }).join('')}</tbody></table>
       <div class="wfoot-pct">PORCENTAJE<b class="p-${pctClass(c)}">${c === null ? '—' : c + '%'}</b></div>`;
   };
@@ -329,7 +329,7 @@ function workerModal(areaId, wid) {
         const miss = db.params.find(p => !st[p.id]);
         if (miss) { bad = miss.id; draw(); toast('Marca todos los parámetros (usa N/A si no aplica).', 'error'); return false; }
         const noObs = db.params.find(p => st[p.id].s === 'nok' && !st[p.id].o.trim() && !st[p.id].p.length);
-        if (noObs) { bad = noObs.id; draw(); toast('Agrega una observación o una foto en lo que no cumple.', 'error'); return false; }
+        if (noObs) { bad = noObs.id; draw(); toast('Agrega una observación en lo que no cumple.', 'error'); return false; }
         dEnsure(areaId).workers[wid] = { st: 'done', items: st };
         await saveDrafts(); redrawArea(areaId);
       }
@@ -339,13 +339,13 @@ function workerModal(areaId, wid) {
         const b = e.target.closest('[data-wp]');
         if (b) {
           const pid = b.dataset.wp, s = b.dataset.s, x = st[pid];
-          st[pid] = x && x.s === s ? null : { s, o: x && s === 'nok' ? x.o : '', p: x && s === 'nok' ? x.p : [] };
+          st[pid] = x && x.s === s ? null : { s, o: x && s === 'nok' ? x.o : '', p: [], c: x && s === 'nok' ? (x.c || '') : '' };
           bad = null; return draw();
         }
         const rm = e.target.closest('[data-wp-rm]');
         if (rm) { st[rm.dataset.wpRm].p.splice(Number(rm.dataset.i), 1); draw(); }
       });
-      m.addEventListener('input', e => { const t = e.target; if (t.dataset.wpObs) { st[t.dataset.wpObs].o = t.value; t.classList.remove('invalid'); } });
+      m.addEventListener('input', e => { const t = e.target; if (t.dataset.wpObs) { st[t.dataset.wpObs].o = t.value; t.classList.remove('invalid'); } if (t.dataset.wpCorr) st[t.dataset.wpCorr].c = t.value; });
       m.addEventListener('change', async e => {
         const t = e.target; if (!t.dataset.wpPhoto) return;
         const f = t.files[0]; t.value = ''; if (!f) return;
@@ -366,12 +366,12 @@ function buildAreaResult(a) {
     const entries = [], absent = [];
     m.workers.forEach(({ w, st }) => {
       if (st && st.st === 'absent') absent.push({ id: w.id, name: w.name });
-      else if (st && st.st === 'done') db.params.forEach(p => { const r = st.items[p.id]; if (r) entries.push({ k: p.id, w: w.id, worker: w.name, text: p.text, status: r.s, obs: r.o || '', photos: r.p || [] }); });
+      else if (st && st.st === 'done') db.params.forEach(p => { const r = st.items[p.id]; if (r) entries.push({ k: p.id, w: w.id, worker: w.name, text: p.text, status: r.s, obs: r.o || '', corr: r.c || '', photos: [] }); });
     });
     blocks.push({ id: 'workers', type: 'trabajadores', label: 'Check Trabajadores', entries, absent });
   }
   m.blocks.forEach(x => blocks.push({ id: x.b.id, type: x.b.type, label: x.label,
-    entries: x.items.filter(i => i.ans).map(i => ({ k: i.it.id, text: i.it.text, status: i.ans.s, obs: i.ans.o || '', photos: i.ans.p || [] })) }));
+    entries: x.items.filter(i => i.ans).map(i => ({ k: i.it.id, text: i.it.text, status: i.ans.s, obs: i.ans.o || '', corr: i.ans.c || '', photos: i.ans.p || [] })) }));
   return { areaId: a.id, areaName: a.name, boss, notEvaluated: false, total: m.total, done: m.done, blocks };
 }
 const resultDone = r => r.notEvaluated ? 0 : r.blocks.reduce((n, b) => n + (b.type === 'trabajadores' ? new Set(b.entries.map(e => e.w)).size : b.entries.length), 0);
@@ -492,7 +492,7 @@ function viewHistorial() {
 function areaFindings(r) {
   if (r.notEvaluated) return [];
   return r.blocks.flatMap(b => b.entries.filter(e => e.status === 'nok').map(e => ({
-    label: b.type === 'trabajadores' ? `Trabajador: ${e.worker} • ${e.text}` : `${b.label.replace('Check ', '')} • ${e.text}`, obs: e.obs, photos: e.photos || []
+    label: b.type === 'trabajadores' ? `Trabajador: ${e.worker} • ${e.text}` : `${b.label.replace('Check ', '')} • ${e.text}`, obs: e.obs, corr: e.corr || '', photos: e.photos || []
   })));
 }
 
@@ -571,7 +571,7 @@ const refreshHist = debounce(() => {
 }, 180);
 
 /* ---------- Exportar el historial filtrado a CSV (Excel) ---------- */
-const CSV_HEADERS = ['Fecha', 'Hora', 'Evaluador', 'Área', 'Categoría', 'Ítem', 'Trabajador', 'Resultado', 'Observación', 'Fotos'];
+const CSV_HEADERS = ['Fecha', 'Hora', 'Evaluador', 'Área', 'Categoría', 'Ítem', 'Trabajador', 'Resultado', 'Observación', 'Acción correctiva', 'Fotos'];
 
 function auditCsvRows(list) {
   const rows = [];
@@ -579,7 +579,7 @@ function auditCsvRows(list) {
     const time = a.ts ? fmtTime(a.ts) : '';
     areas.forEach(r => {
       if (r.notEvaluated) {
-        rows.push([a.date, time, a.evaluator || '', r.areaName, '', '— Área no evaluada', '', '', '', '']);
+        rows.push([a.date, time, a.evaluator || '', r.areaName, '', '— Área no evaluada', '', '', '', '', '']);
         return;
       }
       r.blocks.forEach(b => {
@@ -587,10 +587,10 @@ function auditCsvRows(list) {
         b.entries.forEach(e => rows.push([
           a.date, time, a.evaluator || '', r.areaName, cat, e.text, e.worker || '',
           e.status === 'ok' ? 'Conforme' : e.status === 'nok' ? 'No conforme' : 'N/A',
-          e.obs || '', (e.photos || []).length
+          e.obs || '', e.corr || '', (e.photos || []).length
         ]));
         (b.absent || []).forEach(x => rows.push([
-          a.date, time, a.evaluator || '', r.areaName, cat, 'Trabajador ausente', x.name, 'Ausente', '', 0
+          a.date, time, a.evaluator || '', r.areaName, cat, 'Trabajador ausente', x.name, 'Ausente', '', '', 0
         ]));
       });
     });
@@ -655,7 +655,8 @@ function histAreaCard(a, r) {
     ${absent.length ? `<div class="hc-abs">Ausentes: ${esc(absent.map(x => x.name).join(', '))}</div>` : ''}
     <div class="${open ? 'open' : ''}"><button class="hc-obs-head" data-action="toggle-obs" data-key="${esc(key)}" aria-expanded="${open}">Observaciones <span class="cnt">(${fs.length})</span><span class="chev"></span></button>
     ${open ? (fs.length ? fs.map(f => `<div class="find"><div class="f-top">${WARN}<span>${esc(f.label)}</span></div>
-      <div class="f-act">Acción correctiva: ${f.obs ? esc(f.obs) : 'Sin observación registrada'}</div>
+      <div class="f-obs">Observación: ${f.obs ? esc(f.obs) : 'Sin observación registrada'}</div>
+      <div class="f-act">Acción correctiva: ${f.corr ? esc(f.corr) : 'Sin acción registrada'}</div>
       ${f.photos.length ? `<div class="f-ph">${f.photos.map((p, i) => `<img class="thumb" src="${esc(p)}" alt="Foto ${i + 1}" data-action="zoom">`).join('')}</div>` : ''}</div>`).join('')
       : `<div class="allok">${partial ? 'Sin no conformidades en lo evaluado.' : '100% cumplido. No se registraron acciones correctivas.'}</div>`) : ''}</div>
   </div>`;
@@ -671,7 +672,8 @@ function editAuditModal(id) {
       const path = `${ri}.${bi}.${ei}`;
       html += `<div class="edit-row"><div>${esc(e.text)}<small>${esc(b.label)}${e.worker ? ' · ' + esc(e.worker) : ''}${(e.photos || []).length ? ' · con foto' : ''}</small></div>
         <select data-ea-s="${path}"><option value="ok" ${e.status === 'ok' ? 'selected' : ''}>Conforme</option><option value="nok" ${e.status === 'nok' ? 'selected' : ''}>No conforme</option>${b.type === 'trabajadores' ? `<option value="na" ${e.status === 'na' ? 'selected' : ''}>N/A</option>` : ''}</select>
-        <input class="obs-in2" type="text" data-ea-o="${path}" value="${esc(e.obs)}" placeholder="Observación (o foto, si no cumple)"></div>`;
+        <input class="obs-in2" type="text" data-ea-o="${path}" value="${esc(e.obs)}" placeholder="Observación (o foto, si no cumple)">
+        <input class="obs-in2" type="text" data-ea-c="${path}" value="${esc(e.corr || '')}" placeholder="Acción correctiva"></div>`;
     }));
   });
   modal({
@@ -684,9 +686,9 @@ function editAuditModal(id) {
           for (const [bi, b] of r.blocks.entries()) for (const [ei, e] of b.entries.entries()) {
             const path = `${ri}.${bi}.${ei}`, s = $(`[data-ea-s="${path}"]`, m).value, o = $(`[data-ea-o="${path}"]`, m).value.trim();
             if (s === 'nok' && !o && !(e.photos || []).length) { $(`[data-ea-o="${path}"]`, m).focus(); toast('Falta la observación de un ítem no conforme.', 'error'); return false; }
-            upd.push([e, s, s === 'nok' ? o : '']);
+            upd.push([e, s, s === 'nok' ? o : '', s === 'nok' ? $(`[data-ea-c="${path}"]`, m).value.trim() : '']);
           } }
-        upd.forEach(([e, s, o]) => { e.status = s; e.obs = o; if (s !== 'nok') e.photos = []; });
+        upd.forEach(([e, s, o, c]) => { e.status = s; e.obs = o; e.corr = c; if (s !== 'nok') e.photos = []; });
         a.evaluator = $('#eaEv', m).value.trim();
         await save(); render(true); toast('Auditoría actualizada.');
       }
@@ -869,7 +871,7 @@ function viewResumen() {
     <input type="date" data-sum="ref" value="${ui.sum.ref}" aria-label="Fecha de referencia">
     <button class="btn sm" data-action="period-nav" data-dir="1" aria-label="Período siguiente">›</button>
     <div class="range"><strong>${esc(periodLabel(p, s.from, s.to))}</strong>Meta de cumplimiento: ${db.settings.goal}%</div>
-    <button class="btn primary" data-action="report" ${s.items.length ? '' : 'disabled'}>Generar informe</button></div>`;
+    <button class="btn primary" data-action="report" ${db.audits.length ? '' : 'disabled'}>Generar informe</button></div>`;
   if (!s.items.length) return head + `<div class="card empty"><h3>Sin auditorías en este período</h3><p>Cambia el período o la fecha, o guarda una auditoría desde Inicio.</p></div>${weeksCompareHTML()}`;
   const okN = s.entries.filter(e => e.status === 'ok').length;
   return head + `<div class="kpis">
@@ -886,38 +888,39 @@ function viewResumen() {
     </div>${weeksCompareHTML()}`;
 }
 
-/* ----- Informe ----- */
-function reportHTML(days) {
-  const s = summaryData(days);
-  return SCReport.html(s, {
-    days,
-    store: db.settings.store,
-    evaluator: db.settings.evaluator,
-    goal: db.settings.goal,
-    periodText: periodLabel(ui.sum.period, s.from, s.to),
-    today: todayISO()
-  });
+/* ----- Informe semanal por sala ----- */
+function reportMeta() {
+  const st = db.settings;
+  return { title: st.reportTitle, rev: st.reportRev, docDate: st.reportDate, logo: st.reportLogo, evaluator: st.evaluator, issued: todayISO() };
 }
+const weeklyHTML = (areaId, ref) => SCWeekly.html(SCWeekly.compute(db, areaId, ref), reportMeta());
 
 function openReport() {
-  const s = summaryData(), days = s.audits.map(a => a.date).sort();
+  let areaId = (db.areas.find(a => a.id === ui.reportArea) || db.areas[0] || {}).id, ref = ui.sum.ref || todayISO();
+  const wk0 = weekStartISO(ref);
+  if (!db.audits.some(a => weekStartISO(a.date) === wk0) && db.audits.length) ref = db.audits.map(a => a.date).sort().pop();   // sin auditorías esa semana: la última auditada
+  const areaBtns = () => db.areas.map(a => `<button type="button" class="rep-area ${a.id === areaId ? 'on' : ''}" data-rep-area="${a.id}" aria-pressed="${a.id === areaId}">
+      <b>${esc(a.name)}</b><small>${bossName(a.bossId) ? 'Jefe/a: ' + esc(bossName(a.bossId)) : 'Sin jefe asignado'}</small></button>`).join('');
   modal({
-    title: 'Generar informe', wide: true,
-    body: `<p class="muted" style="margin-bottom:8px">Elige qué días incluir en el informe:</p>
-      <div class="report-days">${days.map(d => `<label><input type="checkbox" data-rday value="${d}" checked> ${fmtDate(d)}</label>`).join('')}</div>
-      <div id="reportPreview"></div>`,
+    title: 'Generar informe semanal', wide: true,
+    body: `<div class="rep-pick"><div><p class="muted">1. Elige la sala:</p><div class="rep-areas" id="repAreas">${areaBtns()}</div></div>
+      <label class="field"><span>2. Semana (cualquier día de esa semana)</span><input type="date" id="repRef" value="${ref}"></label></div>
+      <div id="reportPreview" class="rep-preview"></div>`,
     buttons: [{ label: 'Cerrar' }, {
-      label: 'Imprimir / Guardar PDF', cls: 'primary', onClick: m => {
-        const sel = $$('[data-rday]:checked', m).map(i => i.value);
-        if (!sel.length) { toast('Selecciona al menos un día.', 'error'); return false; }
-        $('#printArea').innerHTML = reportHTML(sel);
+      label: 'Imprimir / Guardar PDF', cls: 'primary', onClick: () => {
+        if (!areaId) { toast('No hay áreas configuradas.', 'error'); return false; }
+        $('#printArea').innerHTML = weeklyHTML(areaId, ref);
         window.print();
         return false;
       }
     }],
     onOpen: m => {
-      const draw = () => { $('#reportPreview', m).innerHTML = reportHTML($$('[data-rday]:checked', m).map(i => i.value)); };
-      m.addEventListener('change', e => { if (e.target.matches('[data-rday]')) draw(); });
+      const draw = () => { $('#reportPreview', m).innerHTML = areaId ? weeklyHTML(areaId, ref) : '<p class="muted">Primero crea áreas en Configuración.</p>'; };
+      m.addEventListener('click', e => {
+        const b = e.target.closest('[data-rep-area]'); if (!b) return;
+        areaId = b.dataset.repArea; ui.reportArea = areaId; $('#repAreas', m).innerHTML = areaBtns(); draw();
+      });
+      m.addEventListener('change', e => { if (e.target.id === 'repRef' && e.target.value) { ref = e.target.value; draw(); } });
       draw();
     }
   });
@@ -1074,6 +1077,11 @@ function cfgGeneral() {
       <label class="field"><span>Nombre de la monitora / evaluador</span><input type="text" name="evaluator" value="${esc(s.evaluator)}" placeholder="Aparecerá en auditorías e informes"></label>
       <label class="field"><span>Nombre del local</span><input type="text" name="store" value="${esc(s.store)}" placeholder="Ej.: Supermercado Centro"></label>
       <label class="field"><span>Meta de cumplimiento (%)</span><input type="number" name="goal" min="1" max="100" value="${s.goal}"></label>
+      <label class="field wide"><span>Informe: título del encabezado</span><input type="text" name="reportTitle" value="${esc(s.reportTitle)}"></label>
+      <label class="field"><span>Informe: revisión (Rev)</span><input type="text" name="reportRev" value="${esc(s.reportRev)}"></label>
+      <label class="field"><span>Informe: fecha del encabezado</span><input type="text" name="reportDate" value="${esc(s.reportDate)}" placeholder="dd.mm.aaaa"></label>
+      <div class="field"><span>Informe: logo del encabezado</span><div class="logo-row">${s.reportLogo ? `<img class="logo-prev" src="${esc(s.reportLogo)}" alt="Logo actual"><button type="button" class="btn sm" data-action="logo-clear">Quitar logo</button>` : '<small class="muted">Sin logo (se usa un recuadro genérico)</small>'}
+        <label class="btn sm" style="cursor:pointer">Subir logo<input type="file" id="logoInput" accept="image/*" hidden></label></div></div>
       <div style="display:flex;align-items:flex-end"><button class="btn primary">Guardar ajustes</button></div></form>` +
     sectionHead('Respaldo y datos') + `<div class="card panel"><p class="muted" style="margin-bottom:12px">Los datos viven solo en este navegador. Descarga un respaldo de vez en cuando, y úsalo para llevar la información a otro computador.<br>
       <span class="${nearLimit ? 'p-nok' : ''}">Espacio usado: <b>${fmtSize(used)}</b>${nearLimit ? ' · cerca del límite del navegador. Descarga un respaldo y elimina fotos o archivos antiguos.' : ''}</span></p>
@@ -1096,7 +1104,7 @@ async function loadSample() {
   db.bosses.push(...bosses); db.workers.push(...workers);
   db.areas.forEach((a, i) => { if (!a.bossId) a.bossId = bosses[i % 3].id; if (!a.workerIds.length && workers[i * 2]) a.workerIds = [workers[i * 2].id, workers[i * 2 + 1] && workers[i * 2 + 1].id].filter(Boolean); });
   const obsList = ['Residuo acumulado bajo el mesón', 'Falta rotulado en productos', 'Uniforme incompleto', 'Basurero sin tapa', 'Pasillo con cajas', 'Utensilios sin sanitizar', ''];
-  const entry = (k, text, extra, level) => { const ok = rnd() < level; return { k, text, ...extra, status: ok ? 'ok' : 'nok', obs: ok ? '' : obsList[Math.floor(rnd() * obsList.length)], photos: [] }; };
+  const entry = (k, text, extra, level) => { const ok = rnd() < level; return { k, text, ...extra, status: ok ? 'ok' : 'nok', obs: ok ? '' : obsList[Math.floor(rnd() * obsList.length)], corr: ok ? '' : 'Se informó al jefe de área', photos: [] }; };
   for (let back = 45; back >= 1; back--) {
     const d = new Date(); d.setDate(d.getDate() - back);
     if (d.getDay() === 0) continue;
@@ -1165,7 +1173,7 @@ document.addEventListener('click', async e => {
     case 'mark': {
       const { key, s } = el.dataset, d = dEnsure(id), cur = d.checks[key];
       if (cur && cur.s === s) delete d.checks[key];
-      else d.checks[key] = s === 'ok' ? { s, o: '', p: [] } : { s, o: cur ? cur.o : '', p: cur ? cur.p : [] };
+      else d.checks[key] = s === 'ok' ? { s, o: '', p: [], c: '' } : { s, o: cur ? cur.o : '', p: cur ? cur.p : [], c: cur ? (cur.c || '') : '' };
       ui.invalid.delete(key); markDrafts(); redrawArea(id);
       if (s === 'nok' && d.checks[key]) { const inp = $$('[data-obs-input]', $(`[data-area="${id}"]`)).find(i => i.dataset.key === key); if (inp) inp.focus(); }
       break;
@@ -1227,6 +1235,7 @@ document.addEventListener('click', async e => {
     case 'period': ui.sum.period = el.dataset.p; render(true); break;
     case 'period-nav': shiftRef(Number(el.dataset.dir)); render(true); break;
     case 'report': openReport(); break;
+    case 'logo-clear': db.settings.reportLogo = ''; await save(); render(true); break;
     /* Configuración */
     case 'cfg-tab': ui.cfgTab = el.dataset.tab; render(true); break;
     case 'add-area': areaForm(); break;
@@ -1296,6 +1305,10 @@ document.addEventListener('input', e => {
     const c = ((drafts[t.dataset.id] || {}).checks || {})[t.dataset.key];
     if (c) { c.o = t.value; markDrafts(); t.classList.remove('invalid'); ui.invalid.delete(t.dataset.key); }
   }
+  if (t.hasAttribute && t.hasAttribute('data-corr-input')) {
+    const c = ((drafts[t.dataset.id] || {}).checks || {})[t.dataset.key];
+    if (c) { c.c = t.value; markDrafts(); }
+  }
 });
 document.addEventListener('change', async e => {
   const t = e.target, c = t.dataset && t.dataset.change;
@@ -1303,6 +1316,7 @@ document.addEventListener('change', async e => {
   if (t.dataset && t.dataset.sum === 'ref' && t.value) { ui.sum.ref = t.value; render(true); }
   if (t.id === 'fileInput') { handleFiles(t.files); t.value = ''; }
   if (t.id === 'importInput' && t.files[0]) importBackup(t.files[0]);
+  if (t.id === 'logoInput' && t.files[0]) { try { db.settings.reportLogo = await compressImage(t.files[0]); await save(); render(true); toast('Logo guardado.'); } catch (err) { toast('No se pudo leer la imagen.', 'error'); } t.value = ''; }
   if (t.hasAttribute && t.hasAttribute('data-photo-input')) {
     const f = t.files[0], { id, key } = t.dataset; t.value = ''; if (!f) return;
     const cur = ((drafts[id] || {}).checks || {})[key]; if (!cur) return;
@@ -1322,7 +1336,8 @@ document.addEventListener('submit', async e => {
   if (f === 'add-param' && text) { db.params.push({ id: uid(), text }); await save(); render(true); const inp = $('[data-form="add-param"] input'); if (inp) inp.focus(); }
   if (f === 'settings') {
     const el = e.target.elements, goal = Math.min(100, Math.max(1, Number(el.goal.value) || 90));
-    Object.assign(db.settings, { evaluator: el.evaluator.value.trim(), store: el.store.value.trim(), goal });
+    Object.assign(db.settings, { evaluator: el.evaluator.value.trim(), store: el.store.value.trim(), goal,
+      reportTitle: el.reportTitle.value.trim() || REPORT_DEFAULTS.reportTitle, reportRev: el.reportRev.value.trim() || REPORT_DEFAULTS.reportRev, reportDate: el.reportDate.value.trim() || REPORT_DEFAULTS.reportDate });
     await save(); render(true); toast('Ajustes guardados.');
   }
 });

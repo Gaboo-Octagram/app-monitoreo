@@ -242,6 +242,7 @@
             item_text: e.text || '',
             status: e.status,
             observation: e.obs || '',
+            corrective_action: e.corr || '',
             /* ms distintos para que el orden se conserve al leer. */
             created_at: new Date(Date.now() + order++).toISOString()
           });
