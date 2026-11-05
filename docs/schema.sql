@@ -237,6 +237,7 @@ create table if not exists public.audit_entries (
   item_text      text not null,
   status         public.entry_status not null,
   observation    text not null default '',
+  corrective_action text not null default '',
   created_at     timestamptz not null default now()
   -- item_id / param_id / worker_id pueden quedar en null si mañana se borra
   -- el catálogo: el texto y el nombre guardados ("item_text", "worker_name")

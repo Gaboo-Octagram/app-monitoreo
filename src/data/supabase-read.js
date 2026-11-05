@@ -182,7 +182,7 @@
     + 'audit_conformity(note,reviewer_name,updated_at),'
     + 'audit_area_results(id,area_id,area_name,boss_name,not_evaluated,total_items,done_items,sort_order,'
     + 'audit_blocks(id,block_type,label,source_block_id,sort_order,'
-    + 'audit_entries(id,item_id,param_id,worker_id,worker_name,item_text,status,observation,created_at,audit_photos(storage_path))),'
+    + 'audit_entries(id,item_id,param_id,worker_id,worker_name,item_text,status,observation,corrective_action,created_at,audit_photos(storage_path))),'
     + 'audit_absences(worker_id,worker_name))';
 
   const bySort = (a, b) => (a.sort_order || 0) - (b.sort_order || 0);
@@ -221,7 +221,7 @@
             id: isW ? 'workers' : (b.source_block_id || b.id), type: b.block_type, label: b.label,
             entries: (b.audit_entries || []).slice().sort(byCreated).map(e => ({
               k: e.param_id || e.item_id || e.id, w: e.worker_id || e.worker_name, worker: e.worker_name || '',
-              text: e.item_text, status: e.status, obs: e.observation || '',
+              text: e.item_text, status: e.status, obs: e.observation || '', corr: e.corrective_action || '',
               photos: (e.audit_photos || []).map(p => urls.get(p.storage_path)).filter(Boolean)
             })),
             ...(isW ? { absent: (r.audit_absences || []).map(x => ({ id: x.worker_id || x.worker_name, name: x.worker_name })) } : {})

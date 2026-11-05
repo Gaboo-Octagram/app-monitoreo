@@ -95,7 +95,8 @@ const check = (n, c) => { console.log((c ? 'OK   ' : 'FALLA') + ' ' + n); if (!c
   check('Estado pasa a En revisión', $('[data-area] .status').textContent === 'En revisión');
   // Marcar ✗ en el 5º (Limpieza) → aparece campo de observación
   click($$('[data-area] [data-action="mark"][data-s="nok"]')[4]); await tick();
-  check('Al marcar ✗ aparece campo de observación', !!$('[data-obs-input]'));
+  check('Al marcar ✗ aparece campo de observación y de acción correctiva', !!$('[data-obs-input]') && !!$('[data-corr-input]'));
+  typeIn($('[data-corr-input]'), 'Se limpió en el momento');
   // Intentar guardar sin observación → bloqueado
   click($('[data-action="save-audit"]')); await tick(40);
   check('Guardar bloqueado sin observación/foto', db().audits.length === 0 && $('.obs-in.invalid'));
@@ -116,10 +117,10 @@ const check = (n, c) => { console.log((c ? 'OK   ' : 'FALLA') + ' ' + n); if (!c
   const pids = db().params.map(p => p.id);
   setWp(pids[0], 'ok'); setWp(pids[1], 'ok'); setWp(pids[2], 'na'); setWp(pids[3], 'ok'); setWp(pids[4], 'ok'); setWp(pids[5], 'nok'); await tick();
   check('Porcentaje en modal = 80% (4 de 5, N/A excluido)', /80%/.test($('.wfoot-pct').textContent));
-  check('No cumple abre observación', !!$('[data-wp-obs]'));
+  check('No cumple abre observación y acción correctiva, sin foto (personal)', !!$('[data-wp-obs]') && !!$('[data-wp-corr]') && !$('[data-wp-photo]'));
   click(foot(1)); await tick();
   check('No cumple sin observación/foto es rechazado', !!$('.wtable'));
-  typeIn($('[data-wp-obs]'), 'Herida sin cubrir');
+  typeIn($('[data-wp-obs]'), 'Herida sin cubrir'); typeIn($('[data-wp-corr]'), 'Se envió a enfermería');
   click(foot(1)); await tick();
   check('Check de trabajador guardado en borrador', !$('.wtable') && /Evaluado 80%/.test($('.wrow').textContent));
   check('Botón cambia a Editar', $$('[data-action="eval-worker"]')[0].textContent === 'Editar');
@@ -158,7 +159,7 @@ const check = (n, c) => { console.log((c ? 'OK   ' : 'FALLA') + ' ' + n); if (!c
   const blocksTxt = card.querySelector('.hc-blocks').textContent;
   check('Tarjeta: bloques Trabajadores/Limpieza/Orden (Caliente)/(Frío)', /Check Trabajadores/.test(blocksTxt) && /Check Orden \(Caliente\)/.test(blocksTxt) && /Check Orden \(Frío\)/.test(blocksTxt));
   check('Orden (Caliente) sin ítems muestra --%', /Check Orden \(Caliente\)--%/.test(blocksTxt.replace(/\s/g, '')) || /Caliente\)\s*--%/.test(blocksTxt));
-  check('Observaciones: hallazgo Limpieza + trabajador con acción correctiva', /Limpieza • /.test(card.textContent) && /Trabajador: Trabajador TF 1 • Sin heridas/.test(card.textContent) && /Residuo en pisos/.test(card.textContent) && /Herida sin cubrir/.test(card.textContent));
+  check('Observaciones: hallazgo Limpieza + trabajador con acción correctiva', /Limpieza • /.test(card.textContent) && /Trabajador: Trabajador TF 1 • Sin heridas/.test(card.textContent) && /Residuo en pisos/.test(card.textContent) && /Herida sin cubrir/.test(card.textContent) && /Acción correctiva: Se limpió en el momento/.test(card.textContent) && /Acción correctiva: Se envió a enfermería/.test(card.textContent));
   // porcentaje general = promedio de bloques
   const nums = [...card.querySelectorAll('.hc-b b')].map(b => parseInt(b.textContent)).filter(n => !isNaN(n));
   const expected = Math.round(nums.reduce((s, x) => s + x, 0) / nums.length);
@@ -198,10 +199,9 @@ const check = (n, c) => { console.log((c ? 'OK   ' : 'FALLA') + ' ' + n); if (!c
   check('Comparativa: selector a 2 semanas', $$('.cmp')[0].querySelectorAll('.wk-line').length === 2);
   click($('[data-action="period"][data-p="month"]')); await tick();
   click($('[data-action="report"]')); await tick();
-  check('Informe: vista previa y días', !!$('#reportPreview .report') && $$('[data-rday]').length > 0);
-  const days = $$('[data-rday]'); if (days.length > 2) { days[0].checked = false; days[0].dispatchEvent(new w.Event('change', { bubbles: true })); await tick(); }  // a comienzos de mes hay pocos días
+  check('Informe: lista de áreas y vista previa', !!$('#reportPreview .wr') && $$('[data-rep-area]').length > 0);
   click(foot(1)); await tick();
-  check('Informe: imprimir', w.__printed === true && !!$('#printArea .report'));
+  check('Informe: imprimir', w.__printed === true && !!$('#printArea .wr'));
   click(foot(0)); await tick();
   await go('#/historial');
   check('Historial agrupado: mes y semana más recientes abiertos, resto cerrado', $$('.grp-month').length >= 2 && $$('.grp-month.open').length === 1 && $$('.grp-week.open').length === 1 && $$('[data-day]').length >= 1 && $$('[data-day]').length < 8);
