@@ -467,3 +467,9 @@ tr.invalid td{box-shadow:none;background:var(--nok-soft)}
 .chip-w .x:hover{color:var(--nok)}
 .subgroup{margin-top:12px}
 .subhead{font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:0 0 8px;padding-bottom:4px;border-bottom:1px solid var(--border)}
+
+/* Cambiar mi contraseña (Mi cuenta) */
+.pw-box{display:flex;flex-direction:column;gap:8px;margin:14px 0;padding:12px;border:1px solid var(--border);border-radius:10px}
+.pw-box input{padding:9px 10px;border-radius:8px;border:1px solid var(--border-2);background:var(--surface-2);color:inherit;font:inherit}
+.pw-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+td select[data-change="user-role"]{min-width:170px}

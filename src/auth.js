@@ -236,6 +236,13 @@
               por rol se aplicarán cuando conectemos las auditorías a Supabase.
             </p>
 
+            <form class="pw-box" id="pwForm" novalidate>
+              <strong>Cambiar mi contraseña</strong>
+              <input type="password" id="pwNew" autocomplete="new-password" placeholder="Contraseña nueva (mínimo 8 caracteres)" aria-label="Contraseña nueva">
+              <input type="password" id="pwNew2" autocomplete="new-password" placeholder="Repite la contraseña nueva" aria-label="Repite la contraseña nueva">
+              <div class="pw-row"><button class="btn sm primary" type="submit" id="pwSave">Cambiar contraseña</button><span class="cloud-msg" id="pwMsg" role="status"></span></div>
+            </form>
+
             <div class="cloud-box">
               <div class="cloud-head">
                 <div>
@@ -274,6 +281,25 @@
       closeAccount();
       renderChip();
       openLogin();
+    });
+
+    modal.querySelector('#pwForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const msg = modal.querySelector('#pwMsg'), btn = modal.querySelector('#pwSave');
+      const a1 = modal.querySelector('#pwNew').value, a2 = modal.querySelector('#pwNew2').value;
+      const say = (t, k) => { msg.textContent = t; msg.className = 'cloud-msg' + (k ? ' ' + k : ''); };
+      if (a1.length < 8) return say('Debe tener al menos 8 caracteres.', 'bad');
+      if (a1 !== a2) return say('Las contraseñas no coinciden.', 'bad');
+      btn.disabled = true; say('Guardando…');
+      try {
+        const { error } = await sb().auth.updateUser({ password: a1 });
+        if (error) throw error;
+        modal.querySelector('#pwNew').value = ''; modal.querySelector('#pwNew2').value = '';
+        say('Contraseña cambiada.', 'ok');
+      } catch (err) {
+        const m = String((err && err.message) || err);
+        say(/same password|different from the old/i.test(m) ? 'La contraseña nueva debe ser distinta de la actual.' : /weak|at least/i.test(m) ? 'La contraseña es muy débil o muy corta.' : 'No se pudo cambiar: ' + m, 'bad');
+      } finally { btn.disabled = false; }
     });
 
     const cloudBtn = modal.querySelector('#cloudCheck');
