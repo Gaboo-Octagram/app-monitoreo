@@ -263,3 +263,13 @@ python -m http.server 8000
 - Desaparece el recorrido borrador → enviada → revisada. La **jefa** deja una *conformidad* diaria, opcional, con una sola observación (máx. 500 caracteres), en la tabla `audit_conformity`. No puede tocar hallazgos ni bloquea auditorías.
 - `delete_all_audits('BORRAR TODO')`: solo el administrador. Borra las auditorías del local; los archivos de Storage se limpian aparte y el respaldo lo baja la app antes.
 - El administrador solo ve perfiles de su local.
+
+
+---
+
+## 11. Migraciones 003 y 004
+
+- **003 (`003-accion-correctiva.sql`):** `audit_entries.corrective_action`, la acción correctiva de cada hallazgo (usada por el informe semanal).
+- **004 (`004-subareas-y-permisos-catalogo.sql`):**
+  - `area_workers.sub` (texto): sub-área del trabajador dentro del área; vacío = sin sub-área. Un trabajador está en una sola sub-área. Las sub-áreas de las checklists ya viajaban en `checklist_blocks.sub`; la app arma las sub-áreas con esos nombres.
+  - `can_edit_catalog()` ahora es **administrador y jefa de calidad**. La monitora sigue leyendo el catálogo, pero ya no lo edita. Esto cambia la tabla de permisos de la sección 3 y de la 10.

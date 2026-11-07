@@ -15,7 +15,7 @@ const DEFAULT_ORDEN = ['Productos ordenados y rotulados', 'Pasillos y salidas de
 const DEFAULT_AREAS = ['Panadería', 'Pastelería', 'Carnicería', 'Rostisería', 'Frutería y Verdulería', 'Sala de Ventas', 'Bodega'];
 
 const mkItems = list => list.map(text => ({ id: uid(), text }));
-const mkBlock = (type, sub, texts) => ({ id: uid(), type, sub: sub || '', items: mkItems(texts) });
+const mkBlock = (type, sub, texts) => ({ id: uid(), type, sub: sub || '', subId: '', items: mkItems(texts) });
 const defaultBlocks = () => [mkBlock('limpieza', '', DEFAULT_LIMPIEZA), mkBlock('orden', '', DEFAULT_ORDEN)];
 const blockLabel = b => `Check ${b.type === 'orden' ? 'Orden' : 'Limpieza'}${b.sub ? ` (${b.sub})` : ''}`;
 
@@ -25,10 +25,42 @@ function seed() {
     settings: { evaluator: '', store: '', goal: 90, ...REPORT_DEFAULTS },
     params: mkItems(DEFAULT_PARAMS),
     bosses: [], workers: [],
-    areas: DEFAULT_AREAS.map(name => ({ id: uid(), name, bossId: '', workerIds: [], blocks: defaultBlocks() })),
+    areas: DEFAULT_AREAS.map(name => ({ id: uid(), name, bossId: '', workerIds: [], subs: [], blocks: defaultBlocks() })),
     audits: []
   };
 }
+
+/* Sub-áreas: cada área tiene subs = [{ id, name, workerIds }]. Un bloque de checklist
+   se liga a su sub-área con subId (y repite el nombre en `sub`, que usan las etiquetas
+   y el informe). Un trabajador está en una sola sub-área; `a.workerIds` sigue siendo
+   la lista completa del área. Los datos antiguos (bloques con `sub` y trabajadores
+   sueltos) se convierten aquí; `workerSubs` ({ trabajadorId: nombreSub }) viene de la nube. */
+const normName = s => String(s == null ? '' : s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+function ensureSubs(a) {
+  a.workerIds = Array.from(new Set(a.workerIds || []));
+  a.blocks = Array.isArray(a.blocks) ? a.blocks : [];
+  a.subs = Array.isArray(a.subs) ? a.subs : [];
+  a.subs.forEach(s => { s.workerIds = Array.from(new Set(s.workerIds || [])); });
+  const byName = n => a.subs.find(s => normName(s.name) === normName(n));
+  a.blocks.forEach(b => {
+    b.items = b.items || []; b.sub = (b.sub || '').trim();
+    let s = b.subId && a.subs.find(x => x.id === b.subId);
+    if (!s && b.sub) s = byName(b.sub) || (a.subs.push({ id: uid(), name: b.sub, workerIds: [] }), a.subs[a.subs.length - 1]);
+    b.subId = s ? s.id : ''; b.sub = s ? s.name : '';
+  });
+  if (a.workerSubs) {
+    Object.entries(a.workerSubs).forEach(([wid, name]) => {
+      if (!name) return;
+      const s = byName(name) || (a.subs.push({ id: uid(), name, workerIds: [] }), a.subs[a.subs.length - 1]);
+      if (!s.workerIds.includes(wid)) s.workerIds.push(wid);
+    });
+    delete a.workerSubs;
+  }
+  const seen = new Set();   // un trabajador, una sola sub-área
+  a.subs.forEach(s => { s.workerIds = s.workerIds.filter(id => !seen.has(id) && seen.add(id)); s.workerIds.forEach(id => { if (!a.workerIds.includes(id)) a.workerIds.push(id); }); });
+  return a;
+}
+const subOfWorker = (a, wid) => (a.subs || []).find(s => s.workerIds.includes(wid)) || null;
 
 /* Completa datos que falten o vengan de versiones anteriores. */
 function normalizeDB(d) {
@@ -37,9 +69,7 @@ function normalizeDB(d) {
   if (!Array.isArray(d.params)) d.params = mkItems(DEFAULT_PARAMS);
   ['bosses', 'workers', 'areas', 'audits'].forEach(k => { if (!Array.isArray(d[k])) d[k] = []; });
   d.areas.forEach(a => {
-    a.workerIds = a.workerIds || [];
-    a.blocks = Array.isArray(a.blocks) ? a.blocks : [];
-    a.blocks.forEach(b => { b.items = b.items || []; b.sub = b.sub || ''; });
+    ensureSubs(a);
   });
   d.audits.forEach(a => { a.areas = Array.isArray(a.areas) ? a.areas : []; });
   return d;

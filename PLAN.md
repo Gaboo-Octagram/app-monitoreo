@@ -82,6 +82,13 @@ Actualizado: 28-10-2026. Estado actual: versión 2 funcionando, con datos guarda
 - **Resumen rediseñado** según la imagen de referencia: rankings a la izquierda, categoría + tendencia a la derecha, y abajo la **comparativa por semanas** en tres gráficos de líneas (Orden, Limpieza, Trabajadores) con una línea por semana, selector de 2/3/4 semanas, meta punteada y porcentajes solo en el máximo y el mínimo de cada línea. Aparece aunque el período de arriba esté vacío. Se quitó el panel "Cumplimiento por área".
 - Con más de 7 áreas, los gráficos se alargan y pasan uno debajo de otro. Prueba: `tests/layout-semanas.test.js`.
 
+### Hecho (ramas `fase-5-informe` y `fase-6-subareas`)
+- **Informe semanal por sala** (Resumen → Generar informe): elige sala y semana, vista previa e Imprimir / Guardar PDF. Acción correctiva por hallazgo (migración 003).
+- **Publicado** en Cloudflare (`wrangler.jsonc`, carpeta `src`).
+- **Sub-áreas:** cada área tiene sub-áreas con sus trabajadores (uno por sub-área) y sus checklists de Limpieza y Orden. Configuración → "Sub-áreas y checklists"; Inicio agrupa por sub-área; los datos antiguos se convierten solos. En el informe, Presentación Personal sigue siendo un solo bloque.
+- **Permisos:** Configuración la editan el administrador y la jefa (solo catálogo); la monitora ya no la ve ni la edita (migración 004).
+- Antes de usar en la nube: ejecutar `docs/migraciones/003` y `004` en Supabase.
+
 ### Pendiente
 - Fase 1: escribir las auditorías en Supabase (guardado por partes), permisos
   por rol en la app y gestión de usuarios desde la interfaz.

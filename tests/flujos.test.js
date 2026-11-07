@@ -2,8 +2,13 @@ const { JSDOM } = require('jsdom');
 const fs = require('fs');
 const path = require('path');
 const dir = path.join(__dirname, '..', 'src') + path.sep;
-const html = fs.readFileSync(dir + 'index.html', 'utf8').replace('<link rel="stylesheet" href="styles.css">', '').replace('<script src="app.js"></script>', '');
-const js = fs.readFileSync(dir + 'app.js', 'utf8');
+// La app ahora es modular y trae Supabase por CDN. En la prueba se quitan todos los <script>
+// del HTML y se cargan en orden solo los locales; sin supabaseClient.js ni auth.js (sin red, sin login).
+const raw = fs.readFileSync(dir + 'index.html', 'utf8');
+const html = raw.replace('<link rel="stylesheet" href="styles.css">', '').replace(/<script[\s\S]*?<\/script>/g, '');
+const SKIP = /supabaseClient\.js|auth\.js|^https?:/;
+const scripts = [...raw.matchAll(/<script src="([^"]+)"><\/script>/g)].map(m => m[1]).filter(src => !SKIP.test(src.replace('./', '')))
+  .map(src => fs.readFileSync(path.join(dir, src), 'utf8'));
 const errors = [];
 
 function boot(initial) {
@@ -13,7 +18,7 @@ function boot(initial) {
   w.addEventListener('error', e => errors.push('window error: ' + e.message));
   w.scrollTo = () => {}; w.print = () => { w.__printed = true; }; w.Element.prototype.scrollIntoView = () => {};
   w.console.error = (...a) => errors.push('console.error: ' + a.join(' '));
-  const s = d.createElement('script'); s.textContent = js; d.body.appendChild(s);
+  scripts.forEach(code => { const s = d.createElement('script'); s.textContent = code; d.body.appendChild(s); });
   const t = {
     w, d, $: q => d.querySelector(q), $$: q => [...d.querySelectorAll(q)],
     click(el) { if (!el) throw new Error('click: elemento no encontrado'); el.dispatchEvent(new w.MouseEvent('click', { bubbles: true })); },
@@ -54,24 +59,25 @@ const check = (n, c) => { console.log((c ? 'OK   ' : 'FALLA') + ' ' + n); if (!c
     $('input[name="name"]').value = n; click(foot(1)); await tick();
   }
   check('2 trabajadores creados', db().workers.length === 2);
-  click($('[data-tab="areas"]')); await tick();
-  click($('[data-action="edit-area"]')); await tick();
-  $$('input[name="workerIds"]').forEach(i => { i.checked = true; });
-  click(foot(1)); await tick();
-  check('Trabajadores asignados al área completa', db().areas[0].workerIds.length === 2);
-
-  // Sub-áreas: agregar bloque Orden (Frío) y Orden (Caliente)
   click($('[data-tab="checklists"]')); await tick();
+  const addW = async id => { const sel = $('[data-change="sub-add-worker"]'); sel.value = id; sel.dispatchEvent(new w.Event('change', { bubbles: true })); await tick(); };
+  for (const x of db().workers) await addW(x.id);
+  check('Trabajadores asignados al área (sin sub-área)', db().areas[0].workerIds.length === 2 && db().areas[0].subs.length === 0);
+
+  // Sub-áreas: Caliente y Frío (cada una con su checklist de Limpieza y de Orden)
   for (const sub of ['Caliente', 'Frío']) {
-    click($('[data-action="add-block"]')); await tick();
-    $('select[name="type"]').value = 'orden'; $('input[name="sub"]').value = sub; click(foot(1)); await tick();
+    click($('[data-action="add-sub"]')); await tick();
+    $('input[name="name"]').value = sub; click(foot(1)); await tick(40);
   }
-  check('Bloques con sub-área creados', db().areas[0].blocks.length === 4 && db().areas[0].blocks[3].sub === 'Frío');
-  const blkId = db().areas[0].blocks[3].id;
+  const A0 = () => db().areas[0], ordenFrio = () => A0().blocks.find(b => b.type === 'orden' && b.sub === 'Frío');
+  check('Sub-áreas creadas con sus 2 checklists', A0().subs.length === 2 && A0().blocks.length === 6 && !!ordenFrio() && ordenFrio().subId === A0().subs[1].id);
+  click($('[data-action="add-sub"]')); await tick(); $('input[name="name"]').value = 'frío'; click(foot(1)); await tick(40);
+  check('Sub-área repetida es rechazada', A0().subs.length === 2 && !!$('.modal')); click(foot(0)); await tick();
+  const blkId = ordenFrio().id;
   for (const txt of ['Mesas', 'Rejillas']) {
     const f = $(`[data-form="add-item"][data-block="${blkId}"]`); f.elements.text.value = txt; submit(f); await tick();
   }
-  check('Ítems agregados al bloque', db().areas[0].blocks[3].items.length === 2);
+  check('Ítems agregados al bloque', ordenFrio().items.length === 2);
   click($('[data-tab="params"]')); await tick();
   check('Parámetros globales por defecto (6)', db().params.length === 6);
 
@@ -164,11 +170,11 @@ const check = (n, c) => { console.log((c ? 'OK   ' : 'FALLA') + ' ' + n); if (!c
   click($('.hcard:not(.na) [data-action="toggle-obs"]')); await tick();
 
   // Filtros
-  const q = $('[data-hist="q"]'); typeIn(q, 'zzz'); await tick();
+  const q = $('[data-hist="q"]'); typeIn(q, 'zzz'); await tick(260);
   check('Filtro sin coincidencias', $$('[data-day]').length === 0);
-  typeIn(q, 'trabajador tf 1'); await tick();
+  typeIn(q, 'trabajador tf 1'); await tick(260);
   check('Filtro por trabajador', $$('[data-day]').length === 1);
-  typeIn(q, ''); const sel = $('[data-hist="only"]'); sel.value = 'ok'; sel.dispatchEvent(new w.Event('input', { bubbles: true })); await tick();
+  typeIn(q, ''); const sel = $('[data-hist="only"]'); sel.value = 'ok'; sel.dispatchEvent(new w.Event('input', { bubbles: true })); await tick(260);
   check('Filtro "Sin hallazgos" excluye día con hallazgos', $$('[data-day]').length === 0);
   click($('[data-action="hist-clear"]')); await tick();
 

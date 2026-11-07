@@ -453,3 +453,17 @@ tr.invalid td{box-shadow:none;background:var(--nok-soft)}
 .cmp-goal i{width:18px;border-top:1px dashed var(--muted);display:inline-block}
 
 .grid-3.stack{grid-template-columns:1fr}
+
+/* Sub-áreas (Configuración e Inicio) */
+.sub-tabs{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 12px}
+.sub-tab{display:flex;flex-direction:column;align-items:flex-start;gap:1px;padding:8px 14px;border:1px solid var(--border-2);border-radius:10px;background:transparent;color:inherit;cursor:pointer;font-weight:600}
+.sub-tab small{color:var(--muted);font-weight:400;font-size:11px}
+.sub-tab.active{border-color:#3987e5;box-shadow:0 0 0 2px rgba(57,135,229,.3);background:rgba(57,135,229,.08)}
+.sub-head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+.sub-workers{margin-bottom:12px;max-width:720px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+.chip-w{display:inline-flex;align-items:center;gap:6px;padding:4px 6px 4px 10px;border-radius:999px;border:1px solid var(--border-2);font-size:13px}
+.chip-w .x{background:transparent;border:0;color:var(--muted);cursor:pointer;padding:2px 4px;border-radius:50%}
+.chip-w .x:hover{color:var(--nok)}
+.subgroup{margin-top:12px}
+.subhead{font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:0 0 8px;padding-bottom:4px;border-bottom:1px solid var(--border)}
