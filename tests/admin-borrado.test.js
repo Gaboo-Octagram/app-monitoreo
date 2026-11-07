@@ -33,8 +33,8 @@ function boot(role) {
 }
 (async () => {
   let t = boot('monitora'); await tick(80); t.w.dispatchEvent(new t.w.CustomEvent('sc-auth')); await tick(200);
-  t.w.location.hash = '#/config'; await tick(60); t.click(t.$('[data-tab="general"]')); await tick();
-  check('Monitora: no ve el botón de borrar historial en la nube', !t.$('[data-action="cloud-wipe"]'));
+  t.w.location.hash = '#/config'; await tick(60);
+  check('Monitora: no entra a Configuración ni ve el botón de borrar historial en la nube', !t.$('[data-tab="general"]') && !t.$('[data-action="cloud-wipe"]'));
 
   t = boot('administrador'); await tick(80); t.w.dispatchEvent(new t.w.CustomEvent('sc-auth')); await tick(200);
   t.w.location.hash = '#/config'; await tick(60); t.click(t.$('[data-tab="general"]')); await tick();

@@ -62,10 +62,10 @@ function boot(role, local) {
   let t = boot('jefa_calidad');
   await tick(80); t.w.dispatchEvent(new t.w.CustomEvent('sc-auth')); await tick(250);
   const nav = t.$$('.nav a').filter(a => !a.hidden).map(a => a.dataset.view);
-  check('Jefa: solo ve Historial y Resumen', nav.join() === 'historial,resumen');
+  check('Jefa: ve Historial, Resumen y Configuración (no Inicio)', nav.join() === 'historial,resumen,config');
   check('Jefa: entra directo a Resumen', t.w.location.hash === '#/resumen');
-  t.w.location.hash = '#/config'; await tick(60);
-  check('Jefa: Configuración redirige a Resumen', t.$('#pageTitle').textContent === 'Resumen');
+  t.w.location.hash = '#/inicio'; await tick(60);
+  check('Jefa: Inicio redirige a Resumen', t.$('#pageTitle').textContent === 'Resumen');
   t.w.location.hash = '#/historial'; await tick(60);
   check('Jefa: Historial muestra la auditoría de la nube', t.$$('[data-day]').length === 1);
   t.click(t.$('[data-action="toggle-day"]')); await tick();
@@ -84,7 +84,7 @@ function boot(role, local) {
   cloudAudit.audit_conformity = { note: 'Revisar basureros', reviewer_name: 'Jefa Demo', updated_at: 'x' };
   t = boot('monitora', localDb);
   await tick(80); t.w.dispatchEvent(new t.w.CustomEvent('sc-auth')); await tick(100);
-  check('Monitora: ve Inicio, Historial, Resumen y Configuración', t.$$('.nav a').filter(a => !a.hidden).length === 4);
+  check('Monitora: ve Inicio, Historial y Resumen (sin Configuración)', t.$$('.nav a').filter(a => !a.hidden).map(a => a.dataset.view).join() === 'inicio,historial,resumen');
   check('Monitora: Inicio muestra las áreas (modo normal)', t.$$('[data-area]').length >= 1);
   t.w.location.hash = '#/historial'; await tick(80);
   t.click(t.$('[data-action="toggle-day"]')); await tick();

@@ -82,7 +82,7 @@ const ui = {
   openAreas: new Set(), openDays: new Set(), closedObs: new Set(), invalid: new Set(), init: false,
   hist: { q: '', area: '', from: '', to: '', only: '' },
   sum: { period: 'week', ref: todayISO(), weeks: 3 },
-  cfgTab: 'areas', cfgArea: '',
+  cfgTab: 'areas', cfgArea: '', cfgSub: '',
   groups: { open: new Set(), closed: new Set() }   // meses y semanas del Historial
 };
 
@@ -259,16 +259,31 @@ function areaCardHTML(a) {
       <span class="ah-prog"><span>Progreso general: <b>${p}%</b>${m.absent ? ` · ${m.absent} ${plural(m.absent, 'ausente', 'ausentes')}` : ''}</span><span>${m.done} / ${m.total} checks evaluados</span></span>
       <span class="bar"><i style="width:${p}%"></i></span>
     </button>
-    ${open ? `<div class="area-body"><div class="blocks">${workersCardHTML(m)}${m.blocks.map((x, i) => blockCardHTML(m, x, m.bPcts[i])).join('')}</div></div>` : ''}
+    ${open ? `<div class="area-body">${areaGroupsHTML(m)}</div>` : ''}
   </section>`;
 }
 
-function workersCardHTML(m) {
-  const a = m.a;
-  if (!m.workers.length)
+/* Área con sub-áreas: un grupo por sub-área (sus trabajadores y sus checks). */
+function areaGroupsHTML(m) {
+  const a = m.a, subs = a.subs || [];
+  if (!subs.length) return `<div class="blocks">${workersCardHTML(m)}${m.blocks.map((x, i) => blockCardHTML(m, x, m.bPcts[i])).join('')}</div>`;
+  const groups = [{ id: '', name: 'General' }, ...subs].map(g => {
+    const ws = m.workers.filter(x => ((subOfWorker(a, x.w.id) || {}).id || '') === g.id);
+    const bs = m.blocks.map((x, i) => ({ x, i })).filter(({ x }) => (x.b.subId || '') === g.id);
+    return { g, ws, bs };
+  }).filter(({ g, ws, bs }) => g.id || ws.length || bs.length);
+  return groups.map(({ g, ws, bs }) => `<div class="subgroup"><h4 class="subhead">${esc(g.name)}</h4><div class="blocks">${ws.length ? workersCardHTML(m, ws, g.id ? g.name : '') : ''}${bs.map(({ x, i }) => blockCardHTML(m, x, m.bPcts[i])).join('')}</div></div>`).join('');
+}
+
+function workersCardHTML(m, list, subName) {
+  const a = m.a, workers = list || m.workers;
+  if (!workers.length)
     return `<div class="bcard"><div class="bhead"><h4>Check Trabajadores</h4></div><p class="hint">Esta área no tiene trabajadores asignados. Asígnalos en Configuración → Áreas.</p></div>`;
-  return `<div class="bcard"><div class="bhead"><h4>Check Trabajadores</h4><div class="pctbox">% GENERAL<b class="p-${pctClass(m.wPct)}">${pctText(m.wPct)}</b></div></div>
-    ${m.workers.map(({ w, st }) => {
+  const gEntries = [];
+  workers.forEach(({ st }) => { if (st && st.st === 'done') db.params.forEach(p => { const r = st.items[p.id]; if (r) gEntries.push({ status: r.s }); }); });
+  const gPct = list ? pct(gEntries) : m.wPct;
+  return `<div class="bcard"><div class="bhead"><h4>Check Trabajadores${subName ? ` (${esc(subName)})` : ''}</h4><div class="pctbox">% GENERAL<b class="p-${pctClass(gPct)}">${pctText(gPct)}</b></div></div>
+    ${workers.map(({ w, st }) => {
       const items = st && st.st === 'done' ? db.params.map(p => st.items[p.id]).filter(Boolean).map(r => ({ status: r.s })) : [];
       const wp = pct(items), absent = st && st.st === 'absent', done = st && st.st === 'done';
       return `<div class="wrow"><div class="wtop"><span class="wname">${esc(w.name)}</span>
@@ -930,10 +945,13 @@ window.addEventListener('afterprint', () => { $('#printArea').innerHTML = ''; })
 /* =====================================================================
    VISTA: CONFIGURACIÓN
    ===================================================================== */
-const CFG_TABS = [['areas', 'Áreas'], ['workers', 'Trabajadores'], ['bosses', 'Jefes responsables'], ['checklists', 'Checklists'], ['params', 'Parámetros de personal'], ['files', 'Archivos'], ['general', 'General']];
+const CFG_TABS = [['areas', 'Áreas'], ['workers', 'Trabajadores'], ['bosses', 'Jefes responsables'], ['checklists', 'Sub-áreas y checklists'], ['params', 'Parámetros de personal'], ['files', 'Archivos'], ['general', 'General']];
 
+/* La jefa solo edita el catálogo; archivos, respaldo y borrado local son del administrador / modo sin conexión. */
+const cfgTabs = () => (headMode ? CFG_TABS.filter(([k]) => !['files', 'general'].includes(k)) : CFG_TABS);
 function viewConfig() {
-  return `<div class="tabs" role="tablist">${CFG_TABS.map(([k, l]) => `<button class="tab ${ui.cfgTab === k ? 'active' : ''}" role="tab" data-action="cfg-tab" data-tab="${k}">${l}</button>`).join('')}</div>${cfgTabHTML()}`;
+  if (!cfgTabs().some(([k]) => k === ui.cfgTab)) ui.cfgTab = 'areas';
+  return `<div class="tabs" role="tablist">${cfgTabs().map(([k, l]) => `<button class="tab ${ui.cfgTab === k ? 'active' : ''}" role="tab" data-action="cfg-tab" data-tab="${k}">${l}</button>`).join('')}</div>${cfgTabHTML()}`;
 }
 function cfgTabHTML() {
   return ({ areas: cfgAreas, workers: cfgWorkers, bosses: cfgBosses, checklists: cfgChecklists, params: cfgParams, files: cfgFiles, general: cfgGeneral })[ui.cfgTab]();
@@ -946,22 +964,21 @@ const rowBtns = (kind, id) => `<td class="actions"><button class="btn sm" data-a
 
 function cfgAreas() {
   return sectionHead('Áreas del supermercado', `<button class="btn primary" data-action="add-area">+ Nueva área</button>`) +
-    tableWrap(['Área', 'Responsable', 'Trabajadores', 'Bloques de checklist', ''], db.areas.map(a => `<tr>
+    tableWrap(['Área', 'Responsable', 'Trabajadores', 'Sub-áreas', ''], db.areas.map(a => `<tr>
       <td><strong>${esc(a.name)}</strong></td><td>${esc(bossName(a.bossId)) || '<span class="muted">—</span>'}</td>
       <td>${a.workerIds.filter(id => db.workers.some(w => w.id === id)).length}</td>
-      <td class="muted">${a.blocks.map(b => esc(blockLabel(b).replace('Check ', ''))).join(' · ') || 'Ninguno'}</td>${rowBtns('area', a.id)}</tr>`), 'Aún no hay áreas. Crea la primera.');
+      <td class="muted">${a.subs && a.subs.length ? a.subs.map(x => esc(x.name)).join(' · ') : '<span class="muted">Sin sub-áreas</span>'}</td>${rowBtns('area', a.id)}</tr>`), 'Aún no hay áreas. Crea la primera.');
 }
 function areaForm(a) {
   formModal({
-    title: a ? 'Editar área' : 'Nueva área', values: a ? { name: a.name, bossId: a.bossId, workerIds: a.workerIds } : {},
+    title: a ? 'Editar área' : 'Nueva área', values: a ? { name: a.name, bossId: a.bossId } : {},
     fields: [
       { name: 'name', label: 'Nombre del área', required: true, placeholder: 'Ej.: Panadería' },
-      { name: 'bossId', label: 'Jefe responsable', type: 'select', options: [{ value: '', label: 'Sin asignar' }, ...db.bosses.map(b => ({ value: b.id, label: b.name }))] },
-      { name: 'workerIds', label: 'Trabajadores del área (toda el área)', type: 'checkboxes', options: db.workers.map(w => ({ value: w.id, label: w.name })), empty: 'Primero agrega trabajadores en la pestaña Trabajadores.' }
+      { name: 'bossId', label: 'Jefe responsable', type: 'select', options: [{ value: '', label: 'Sin asignar' }, ...db.bosses.map(b => ({ value: b.id, label: b.name }))] }
     ],
     onSubmit: async d => {
       if (a) Object.assign(a, d);
-      else db.areas.push({ id: uid(), ...d, blocks: defaultBlocks() });
+      else db.areas.push({ id: uid(), ...d, workerIds: [], subs: [], blocks: defaultBlocks() });
       await save(); render(true);
     }
   });
@@ -969,8 +986,8 @@ function areaForm(a) {
 
 function cfgWorkers() {
   return sectionHead('Trabajadores', `<button class="btn primary" data-action="add-worker">+ Nuevo trabajador</button>`) +
-    tableWrap(['Nombre', 'Cargo', 'Área', ''], db.workers.map(w => `<tr><td><strong>${esc(w.name)}</strong></td><td>${esc(w.role) || '<span class="muted">—</span>'}</td>
-      <td>${esc(db.areas.filter(a => a.workerIds.includes(w.id)).map(a => a.name).join(', ')) || '<span class="muted">Sin área</span>'}</td>${rowBtns('worker', w.id)}</tr>`), 'Aún no hay trabajadores. Agrégalos y luego asígnalos a un área.');
+    tableWrap(['Nombre', 'Cargo', 'Área › sub-área', ''], db.workers.map(w => `<tr><td><strong>${esc(w.name)}</strong></td><td>${esc(w.role) || '<span class="muted">—</span>'}</td>
+      <td>${esc(db.areas.filter(a => a.workerIds.includes(w.id)).map(a => a.name + ((subOfWorker(a, w.id) || {}).name ? ' › ' + subOfWorker(a, w.id).name : '')).join(', ')) || '<span class="muted">Sin área</span>'}</td>${rowBtns('worker', w.id)}</tr>`), 'Aún no hay trabajadores. Agrégalos y luego asígnalos a un área.');
 }
 function personForm(kind, p) {
   const isW = kind === 'worker';
@@ -990,36 +1007,48 @@ function cfgBosses() {
       <td>${esc(db.areas.filter(a => a.bossId === b.id).map(a => a.name).join(', ')) || '<span class="muted">Sin áreas</span>'}</td>${rowBtns('boss', b.id)}</tr>`), 'Aún no hay jefes. Agrégalos para asignarlos como responsables de un área.');
 }
 
+const BLOCK_TYPES = [['limpieza', 'Limpieza'], ['orden', 'Orden']];
+const cfgGroups = a => {
+  const hasGeneral = !a.subs.length || a.blocks.some(b => !b.subId) || a.workerIds.some(w => db.workers.some(x => x.id === w) && !subOfWorker(a, w));
+  return [...(hasGeneral ? [{ id: '', name: a.subs.length ? 'General' : 'Toda el área' }] : []), ...a.subs];
+};
+const groupWorkers = (a, g) => a.workerIds.map(id => db.workers.find(w => w.id === id)).filter(w => w && (subOfWorker(a, w.id) || { id: '' }).id === g.id);
+
+function blockCardHTML2(b) {
+  return `<div class="card cl-col"><div class="cl-top"><div><h3>${esc(b.type === 'orden' ? 'Check Orden' : 'Check Limpieza')}</h3><p>${b.items.length} ${plural(b.items.length, 'ítem', 'ítems')}</p></div>
+      <div><button class="btn sm ghost" data-action="del-block" data-id="${b.id}">Eliminar</button></div></div>
+    ${b.items.length ? b.items.map(it => `<div class="cl-item"><span>${esc(it.text)}</span>
+      <button class="btn sm ghost" data-action="edit-item" data-block="${b.id}" data-id="${it.id}">Editar</button>
+      <button class="btn sm ghost" data-action="del-item" data-block="${b.id}" data-id="${it.id}" aria-label="Eliminar ítem">✕</button></div>`).join('') : '<p class="hint">Sin ítems todavía.</p>'}
+    <form class="cl-add" data-form="add-item" data-block="${b.id}"><input type="text" name="text" placeholder="Nuevo ítem…" aria-label="Nuevo ítem de ${esc(blockLabel(b))}" required><button class="btn sm primary">Agregar</button></form></div>`;
+}
+
 function cfgChecklists() {
   if (!db.areas.length) return `<div class="card empty"><p>Crea al menos un área para armar sus checklists.</p></div>`;
   if (!db.areas.some(a => a.id === ui.cfgArea)) ui.cfgArea = db.areas[0].id;
-  const a = db.areas.find(x => x.id === ui.cfgArea);
+  const a = ensureSubs(db.areas.find(x => x.id === ui.cfgArea));
+  const groups = cfgGroups(a);
+  if (!groups.some(g => g.id === ui.cfgSub)) ui.cfgSub = groups.length ? groups[0].id : '';
+  const g = groups.find(x => x.id === ui.cfgSub) || { id: '', name: '' };
+  const isSub = !!g.id, blocks = a.blocks.filter(b => (b.subId || '') === g.id);
+  const mine = groupWorkers(a, g), free = db.workers.filter(w => !a.workerIds.includes(w.id));
+  const missing = BLOCK_TYPES.filter(([t]) => !blocks.some(b => b.type === t));
   return `<div class="section-head"><label class="inline-field">Área
       <select data-change="cfg-area">${db.areas.map(x => `<option value="${x.id}" ${x.id === a.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label>
-      <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" data-action="add-block">+ Agregar bloque</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" data-action="add-sub">+ Sub-área</button>
       <button class="btn" data-action="copy-checklist" ${db.areas.length < 2 ? 'disabled' : ''}>Copiar desde otra área</button></div></div>
-    <p class="hint" style="margin-top:-4px">Cada bloque es un checklist de Limpieza u Orden. Para sub-áreas (por ejemplo Caliente y Frío) crea un bloque por cada una y ponle el nombre de la sub-área. El check de Trabajadores usa los parámetros de la pestaña <b>Parámetros de personal</b>.</p>
-    ${a.blocks.length ? `<div class="cl-grid">${a.blocks.map(b => `<div class="card cl-col"><div class="cl-top"><div><h3>${esc(blockLabel(b))}</h3><p>${b.items.length} ${plural(b.items.length, 'ítem', 'ítems')}</p></div>
-        <div><button class="btn sm ghost" data-action="edit-block" data-id="${b.id}">Editar</button><button class="btn sm ghost" data-action="del-block" data-id="${b.id}">Eliminar</button></div></div>
-      ${b.items.length ? b.items.map(it => `<div class="cl-item"><span>${esc(it.text)}</span>
-        <button class="btn sm ghost" data-action="edit-item" data-block="${b.id}" data-id="${it.id}">Editar</button>
-        <button class="btn sm ghost" data-action="del-item" data-block="${b.id}" data-id="${it.id}" aria-label="Eliminar ítem">✕</button></div>`).join('') : '<p class="hint">Sin ítems todavía.</p>'}
-      <form class="cl-add" data-form="add-item" data-block="${b.id}"><input type="text" name="text" placeholder="Nuevo ítem…" aria-label="Nuevo ítem de ${esc(blockLabel(b))}" required><button class="btn sm primary">Agregar</button></form></div>`).join('')}</div>`
-    : `<div class="card empty"><p>Esta área no tiene bloques. Agrega uno de Limpieza u Orden.</p></div>`}`;
-}
-function blockForm(b) {
-  formModal({
-    title: b ? 'Editar bloque' : 'Nuevo bloque', values: b || { type: 'limpieza' },
-    fields: [
-      { name: 'type', label: 'Tipo de checklist', type: 'select', options: [{ value: 'limpieza', label: 'Limpieza' }, { value: 'orden', label: 'Orden' }] },
-      { name: 'sub', label: 'Sub-área (opcional)', placeholder: 'Ej.: Caliente, Frío, Cocina' }
-    ],
-    onSubmit: async d => {
-      const a = db.areas.find(x => x.id === ui.cfgArea);
-      if (b) Object.assign(b, d); else a.blocks.push({ id: uid(), type: d.type, sub: d.sub, items: [] });
-      await save(); render(true);
-    }
-  });
+    <p class="hint" style="margin-top:-4px">Si el área tiene sub-áreas (por ejemplo Cuarto Caliente y Cuarto Frío), cada una lleva sus trabajadores y sus checklists de Limpieza y Orden. Cada trabajador está en una sola sub-área. Los parámetros de higiene son globales (pestaña <b>Parámetros de personal</b>).</p>
+    <div class="sub-tabs" role="tablist" aria-label="Sub-áreas de ${esc(a.name)}">${groups.map(x => `<button class="sub-tab ${x.id === g.id ? 'active' : ''}" role="tab" aria-selected="${x.id === g.id}" data-action="cfg-sub" data-id="${x.id}">${esc(x.name)}<small>${groupWorkers(a, x).length} ${plural(groupWorkers(a, x).length, 'trabajador', 'trabajadores')}</small></button>`).join('')}</div>
+    <div class="sub-panel">
+      <div class="sub-head"><h3>${esc(isSub ? g.name : (a.subs.length ? 'General (sin sub-área)' : a.name))}</h3>
+        ${isSub ? `<div><button class="btn sm" data-action="rename-sub" data-id="${g.id}">Renombrar</button> <button class="btn sm ghost" data-action="del-sub" data-id="${g.id}">Eliminar sub-área</button></div>` : ''}</div>
+      <div class="card cl-col sub-workers"><div class="cl-top"><div><h3>Trabajadores${isSub ? ' de esta sub-área' : ''}</h3><p>${mine.length} ${plural(mine.length, 'asignado', 'asignados')}</p></div></div>
+        ${mine.length ? `<div class="chips">${mine.map(w => `<span class="chip-w">${esc(w.name)}<button class="x" data-action="sub-rm-worker" data-w="${w.id}" aria-label="Quitar a ${esc(w.name)}">✕</button></span>`).join('')}</div>` : '<p class="hint">Sin trabajadores asignados.</p>'}
+        <label class="inline-field">Agregar trabajador
+          <select data-change="sub-add-worker" ${free.length ? '' : 'disabled'}><option value="">${free.length ? 'Elegir…' : 'No quedan trabajadores sin área (créalos en Trabajadores)'}</option>${free.map(w => `<option value="${w.id}">${esc(w.name)}</option>`).join('')}</select></label></div>
+      ${blocks.length ? `<div class="cl-grid">${blocks.map(blockCardHTML2).join('')}</div>` : '<div class="card empty"><p>Sin checklists en esta sección.</p></div>'}
+      ${missing.length ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">${missing.map(([t, l]) => `<button class="btn" data-action="add-block-type" data-type="${t}">+ Checklist de ${l}</button>`).join('')}</div>` : ''}
+    </div>`;
 }
 
 function cfgParams() {
@@ -1149,9 +1178,10 @@ const TITLES = { inicio: 'Inicio', historial: 'Historial', resumen: 'Resumen', c
 function render(keepScroll) {
   const route = location.hash.replace('#/', '');
   let v = VIEWS[route] ? route : 'inicio';
-  if (headMode && (v === 'inicio' || v === 'config')) v = 'resumen';
+  if (authRole === 'monitora' && v === 'config') { v = 'inicio'; history.replaceState(null, '', '#/inicio'); }   // el catálogo lo edita el administrador o la jefa
+  if (headMode && v === 'inicio') { v = 'resumen'; history.replaceState(null, '', '#/resumen'); }
   const y = window.scrollY;
-  $$('.nav a').forEach(a => { a.classList.toggle('active', a.dataset.view === v); a.hidden = headMode && (a.dataset.view === 'inicio' || a.dataset.view === 'config'); });
+  $$('.nav a').forEach(a => { a.classList.toggle('active', a.dataset.view === v); a.hidden = (headMode && a.dataset.view === 'inicio') || (authRole === 'monitora' && a.dataset.view === 'config'); });
   $('#pageTitle').textContent = TITLES[v];
   document.title = `${TITLES[v]} · Sistema de Calidad`;
   $('#view').innerHTML = VIEWS[v]();
@@ -1246,15 +1276,44 @@ document.addEventListener('click', async e => {
     case 'add-worker': personForm('worker'); break;
     case 'edit-worker': personForm('worker', db.workers.find(w => w.id === id)); break;
     case 'del-worker':
-      if (await confirmBox('¿Eliminar este trabajador? Se quitará de las áreas; el historial se conserva.', 'Eliminar', true)) { db.workers = db.workers.filter(w => w.id !== id); db.areas.forEach(a => { a.workerIds = a.workerIds.filter(x => x !== id); }); await save(); render(true); }
+      if (await confirmBox('¿Eliminar este trabajador? Se quitará de las áreas; el historial se conserva.', 'Eliminar', true)) { db.workers = db.workers.filter(w => w.id !== id); db.areas.forEach(a => { a.workerIds = a.workerIds.filter(x => x !== id); (a.subs || []).forEach(x => { x.workerIds = x.workerIds.filter(y => y !== id); }); }); await save(); render(true); }
       break;
     case 'add-boss': personForm('boss'); break;
     case 'edit-boss': personForm('boss', db.bosses.find(b => b.id === id)); break;
     case 'del-boss':
       if (await confirmBox('¿Eliminar este jefe? Las áreas a su cargo quedarán sin responsable.', 'Eliminar', true)) { db.bosses = db.bosses.filter(b => b.id !== id); db.areas.forEach(a => { if (a.bossId === id) a.bossId = ''; }); await save(); render(true); }
       break;
-    case 'add-block': blockForm(); break;
-    case 'edit-block': blockForm(db.areas.find(a => a.id === ui.cfgArea).blocks.find(b => b.id === id)); break;
+    case 'cfg-sub': ui.cfgSub = id || ''; render(true); break;
+    case 'add-sub': case 'rename-sub': {
+      const a = ensureSubs(db.areas.find(x => x.id === ui.cfgArea)), cur = action === 'rename-sub' ? a.subs.find(x => x.id === id) : null;
+      formModal({
+        title: cur ? 'Renombrar sub-área' : 'Nueva sub-área', values: cur ? { name: cur.name } : {},
+        fields: [{ name: 'name', label: 'Nombre de la sub-área', required: true, placeholder: 'Ej.: Cuarto Frío' }],
+        onSubmit: d => {
+          const name = d.name.trim();
+          if (a.subs.some(x => x !== cur && normName(x.name) === normName(name))) { toast('Ya existe una sub-área con ese nombre.', 'error'); return false; }
+          if (cur) { cur.name = name; a.blocks.forEach(b => { if (b.subId === cur.id) b.sub = name; }); }
+          else { const ns = { id: uid(), name, workerIds: [] }; a.subs.push(ns); ui.cfgSub = ns.id; BLOCK_TYPES.forEach(([t]) => a.blocks.push({ id: uid(), type: t, sub: name, subId: ns.id, items: [] })); }
+          save().then(() => render(true));
+        }
+      });
+      break;
+    }
+    case 'del-sub': {
+      const a = db.areas.find(x => x.id === ui.cfgArea), sb2 = a.subs.find(x => x.id === id);
+      if (sb2 && await confirmBox(`¿Eliminar la sub-área "${sb2.name}" con sus checklists? Sus trabajadores quedan sin sub-área. El historial se conserva.`, 'Eliminar', true)) {
+        a.blocks = a.blocks.filter(b => b.subId !== id); a.subs = a.subs.filter(x => x.id !== id); ui.cfgSub = ''; await save(); render(true);
+      }
+      break;
+    }
+    case 'add-block-type': {
+      const a = db.areas.find(x => x.id === ui.cfgArea), g = a.subs.find(x => x.id === ui.cfgSub);
+      a.blocks.push({ id: uid(), type: el.dataset.type, sub: g ? g.name : '', subId: g ? g.id : '', items: [] }); await save(); render(true); break;
+    }
+    case 'sub-rm-worker': {
+      const a = db.areas.find(x => x.id === ui.cfgArea), w = el.dataset.w;
+      a.workerIds = a.workerIds.filter(x => x !== w); a.subs.forEach(x => { x.workerIds = x.workerIds.filter(y => y !== w); }); await save(); render(true); break;
+    }
     case 'del-block':
       if (await confirmBox('¿Eliminar este bloque y todos sus ítems?', 'Eliminar', true)) { const a = db.areas.find(x => x.id === ui.cfgArea); a.blocks = a.blocks.filter(b => b.id !== id); await save(); render(true); }
       break;
@@ -1273,10 +1332,11 @@ document.addEventListener('click', async e => {
     case 'copy-checklist':
       formModal({
         title: 'Copiar checklist', submitLabel: 'Copiar',
-        fields: [{ name: 'from', label: 'Copiar desde (reemplaza los bloques de esta área)', type: 'select', options: db.areas.filter(a => a.id !== ui.cfgArea).map(a => ({ value: a.id, label: a.name })) }],
+        fields: [{ name: 'from', label: 'Copiar desde (reemplaza sub-áreas, checklists y trabajadores de esta área)', type: 'select', options: db.areas.filter(a => a.id !== ui.cfgArea).map(a => ({ value: a.id, label: a.name })) }],
         onSubmit: async d => {
           const src = db.areas.find(a => a.id === d.from), dst = db.areas.find(a => a.id === ui.cfgArea);
-          dst.blocks = src.blocks.map(b => ({ id: uid(), type: b.type, sub: b.sub, items: b.items.map(i => ({ id: uid(), text: i.text })) }));
+          dst.subs = (src.subs || []).map(x => ({ id: uid(), name: x.name, workerIds: [] }));
+          dst.workerIds = []; dst.blocks = src.blocks.map(b => ({ id: uid(), type: b.type, sub: b.sub, subId: ((dst.subs.find(x => normName(x.name) === normName(b.sub))) || {}).id || '', items: b.items.map(i => ({ id: uid(), text: i.text })) }));
           await save(); render(true); toast('Checklist copiado.');
         }
       });
@@ -1312,7 +1372,13 @@ document.addEventListener('input', e => {
 });
 document.addEventListener('change', async e => {
   const t = e.target, c = t.dataset && t.dataset.change;
-  if (c === 'cfg-area') { ui.cfgArea = t.value; render(true); }
+  if (c === 'cfg-area') { ui.cfgArea = t.value; ui.cfgSub = ''; render(true); }
+  if (c === 'sub-add-worker' && t.value) {
+    const a = ensureSubs(db.areas.find(x => x.id === ui.cfgArea)), g = a.subs.find(x => x.id === ui.cfgSub);
+    if (!a.workerIds.includes(t.value)) a.workerIds.push(t.value);
+    if (g && !g.workerIds.includes(t.value)) g.workerIds.push(t.value);
+    await save(); render(true);
+  }
   if (t.dataset && t.dataset.sum === 'ref' && t.value) { ui.sum.ref = t.value; render(true); }
   if (t.id === 'fileInput') { handleFiles(t.files); t.value = ''; }
   if (t.id === 'importInput' && t.files[0]) importBackup(t.files[0]);
@@ -1488,7 +1554,8 @@ async function enterHeadMode() {
   } catch (e) {
     toast((e && e.message) || 'No se pudieron leer las auditorías de la nube.', 'error');
   }
-  if (!['resumen', 'historial'].includes(location.hash.replace('#/', ''))) location.hash = '#/resumen';
+  if (!['resumen', 'historial', 'config'].includes(location.hash.replace('#/', ''))) location.hash = '#/resumen';
+  if (db.areas.length) { catalogCloud = true; catalogSig = SupabaseCatalog.signature(db); }   // la jefa también edita el catálogo
   render();
 }
 
@@ -1513,7 +1580,7 @@ async function adoptCloudCatalog() {
     const byName = new Map(cat.areas.map(a => [norm(a.name), a.id]));
     const oldToNew = new Map(db.areas.map(a => [a.id, byName.get(norm(a.name))]).filter(x => x[1]));
     db.audits.forEach(a => a.areas.forEach(r => { if (oldToNew.has(r.areaId)) r.areaId = oldToNew.get(r.areaId); }));
-    db.areas = cat.areas; db.params = cat.params; db.workers = cat.workers; db.bosses = cat.bosses;
+    db.areas = cat.areas.map(ensureSubs); db.params = cat.params; db.workers = cat.workers; db.bosses = cat.bosses;
     catalogCloud = true; catalogRetry = false;
     catalogSig = SupabaseCatalog.signature(db);
     await save();
@@ -1522,7 +1589,7 @@ async function adoptCloudCatalog() {
 }
 
 async function pushCatalog() {
-  if (!catalogCloud || headMode || catalogBusy || !window.SupabaseCatalog) return;
+  if (!catalogCloud || authRole === 'monitora' || catalogBusy || !window.SupabaseCatalog) return;
   const sig = SupabaseCatalog.signature(db);
   if (sig === catalogSig) return;
   catalogBusy = true;

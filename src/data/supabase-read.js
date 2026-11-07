@@ -61,7 +61,7 @@
       select(client, 'hygiene_params', 'id,text,sort_order,active', 'sort_order'),
       select(client, 'workers', 'id,name,position,active', 'name'),
       select(client, 'bosses', 'id,name,position,active', 'name'),
-      select(client, 'area_workers', 'area_id,worker_id')
+      select(client, 'area_workers', 'area_id,worker_id,sub')
     ]);
 
     const live = x => x.active !== false;   // lo "borrado" queda inactivo en la nube
@@ -71,10 +71,11 @@
       itemsByBlock.get(it.block_id).push({ id: it.id, text: it.text });
     });
 
-    const workersByArea = new Map();
+    const workersByArea = new Map(), subsByArea = new Map();
     links.forEach(l => {
       if (!workersByArea.has(l.area_id)) workersByArea.set(l.area_id, []);
       workersByArea.get(l.area_id).push(l.worker_id);
+      if (l.sub) { if (!subsByArea.has(l.area_id)) subsByArea.set(l.area_id, {}); subsByArea.get(l.area_id)[l.worker_id] = l.sub; }
     });
 
     const blocksByArea = new Map();
@@ -94,6 +95,7 @@
         name: a.name,
         bossId: a.boss_id || '',
         workerIds: workersByArea.get(a.id) || [],
+        workerSubs: subsByArea.get(a.id) || {},
         blocks: blocksByArea.get(a.id) || []
       })),
       params: params.filter(live).map(p => ({ id: p.id, text: p.text })),

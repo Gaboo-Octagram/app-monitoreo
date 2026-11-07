@@ -1,4 +1,4 @@
-/* Catálogo en la nube (monitora) con un Supabase simulado en memoria. */
+/* Catálogo en la nube (administrador, jefa y monitora) con un Supabase simulado en memoria. */
 const { JSDOM } = require('jsdom');
 const fs = require('fs'), path = require('path');
 const dir = path.join(__dirname, '..', 'src') + path.sep;
@@ -13,7 +13,7 @@ const U = n => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 
 /* Base en memoria con lo justo de PostgREST: select / upsert / insert / update / delete + eq / in. */
 const T = {
-  profiles: [{ id: 'u1', store_id: 'st', role: 'monitora', full_name: 'Moni', active: true }],
+  profiles: [{ id: 'u1', store_id: 'st', role: 'administrador', full_name: 'Admin', active: true }],
   areas: [{ id: U(1), store_id: 'st', name: 'Panadería', boss_id: null, active: true, sort_order: 0 }, { id: U(2), store_id: 'st', name: 'Bodega', boss_id: null, active: true, sort_order: 1 }],
   checklist_blocks: [{ id: U(11), area_id: U(1), type: 'limpieza', sub: '', sort_order: 0 }],
   checklist_items: [{ id: U(21), block_id: U(11), text: 'Pisos limpios', sort_order: 0, active: true }, { id: U(22), block_id: U(11), text: 'Basureros', sort_order: 1, active: true }],
@@ -51,6 +51,7 @@ function from(table) {
 const fakeSb = () => ({ from, storage: { from: () => ({}) }, auth: { getSession: () => Promise.resolve({ data: { session: { user: { id: 'u1' } } }, error: null }), onAuthStateChange() {} } });
 
 function boot(role, initial) {
+  T.profiles[0].role = role;
   const dom = new JSDOM(html, { url: 'http://localhost/', runScripts: 'dangerously', pretendToBeVisual: true,
     beforeParse(w) { w.sb = fakeSb(); w.SCAuth = { role: () => role, signedIn: () => true }; if (initial) w.localStorage.setItem('sc_data_v2', initial); } });
   const w = dom.window, d = w.document;
@@ -66,7 +67,7 @@ function boot(role, initial) {
   /* Navegador con un catálogo local viejo (ids cortos) y una auditoría guardada. */
   const old = { version: 2, settings: { evaluator: 'Moni', store: '', goal: 90 }, params: [{ id: 'p1', text: 'Otro' }], bosses: [], workers: [],
     areas: [{ id: 'a-local', name: 'Panadería', bossId: '', workerIds: [], blocks: [] }], audits: [{ id: 'x', date: '2026-10-01', areas: [{ areaId: 'a-local', areaName: 'Panadería', notEvaluated: true }] }] };
-  const t = boot('monitora', JSON.stringify(old));
+  const t = boot('administrador', JSON.stringify(old));
   await tick(80); t.w.dispatchEvent(new t.w.CustomEvent('sc-auth')); await tick(300);
 
   let db = t.db();
@@ -103,10 +104,41 @@ function boot(role, initial) {
   t.click(t.$('[data-action="load-sample"]')); await tick(1300);
   check('Los datos de ejemplo no se suben a la nube', T.workers.length === before && !T.workers.some(w => w.sample));
 
-  /* La jefa nunca empuja catálogo. */
+  /* La monitora no ve Configuración ni empuja catálogo. */
   const n = log.length;
-  const j = boot('jefa_calidad'); await tick(80); j.w.dispatchEvent(new j.w.CustomEvent('sc-auth')); await tick(300);
-  check('Jefa: no escribe nada en el catálogo', log.length === n);
+  const m = boot('monitora'); await tick(80); m.w.dispatchEvent(new m.w.CustomEvent('sc-auth')); await tick(300);
+  await m.go('#/config');
+  check('Monitora: Configuración oculta y la ruta la devuelve a Inicio', m.$('.nav a[data-view="config"]').hidden === true && m.w.location.hash === '#/inicio' && !m.$('.tabs'));
+  check('Monitora: no escribe nada en el catálogo', log.length === n);
+
+  /* La jefa sí edita el catálogo (y solo el catálogo). */
+  const j = boot('jefa_calidad'); await tick(80); j.w.dispatchEvent(new j.w.CustomEvent('sc-auth')); await tick(400);
+  check('Jefa: ve Configuración y no Inicio', j.$('.nav a[data-view="config"]').hidden === false && j.$('.nav a[data-view="inicio"]').hidden === true);
+  await j.go('#/config');
+  check('Jefa: solo pestañas de catálogo (sin Archivos ni General)', j.$$('.tab').length === 5 && !j.$('[data-tab="general"]') && !j.$('[data-tab="files"]'));
+  j.click(j.$('[data-tab="checklists"]')); await tick();
+  const jf = j.$(`[data-form="add-item"][data-block="${U(11)}"]`);
+  jf.elements.text.value = 'Ítem de la jefa';
+  jf.dispatchEvent(new j.w.Event('submit', { bubbles: true, cancelable: true })); await tick(1300);
+  check('Jefa: su cambio de catálogo se guarda en la nube', T.checklist_items.some(i => i.text === 'Ítem de la jefa' && i.block_id === U(11)));
+
+  /* Sub-áreas viajan a la nube como nombre en bloques y en area_workers.sub. */
+  j.click(j.$('[data-action="add-sub"]')); await tick();
+  j.$('input[name="name"]').value = 'Cuarto Frío'; j.click(j.$$('.modal-foot .btn')[1]); await tick(1300);
+  check('Sub-área nueva: sus 2 bloques suben con el nombre', T.checklist_blocks.filter(b => b.sub === 'Cuarto Frío').length === 2);
+
+  /* El trabajador pasa de "General" a la sub-área nueva y la nube guarda el nombre de la sub-área. */
+  j.click(j.$('[data-action="cfg-sub"][data-id=""]')); await tick();
+  j.click(j.$('[data-action="sub-rm-worker"]')); await tick();
+  j.click(j.$$('[data-action="cfg-sub"]').find(b => /Cuarto Frío/.test(b.textContent))); await tick();
+  const sel = j.$('[data-change="sub-add-worker"]');
+  sel.value = U(41); sel.dispatchEvent(new j.w.Event('change', { bubbles: true })); await tick(1300);
+  check('Un trabajador, una sola sub-área: area_workers.sub = Cuarto Frío', T.area_workers.length === 1 && T.area_workers[0].worker_id === U(41) && T.area_workers[0].sub === 'Cuarto Frío');
+
+  /* Otra sesión (administrador) baja el catálogo con las sub-áreas ya armadas. */
+  const a2 = boot('administrador'); await tick(80); a2.w.dispatchEvent(new a2.w.CustomEvent('sc-auth')); await tick(400);
+  const ar = a2.db().areas.find(a => a.id === U(1));
+  check('Catálogo de la nube trae sub-áreas, su trabajador y sus bloques', ar.subs.length === 1 && ar.subs[0].name === 'Cuarto Frío' && ar.subs[0].workerIds.join() === U(41) && ar.blocks.filter(b => b.subId === ar.subs[0].id).length === 2);
 
   console.log('\n' + (errors.length ? 'ERRORES:\n' + errors.join('\n') : 'TODO OK — sin errores de consola'));
   process.exit(errors.length ? 1 : 0);

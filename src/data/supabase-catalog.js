@@ -5,7 +5,7 @@
      - lo nuevo o editado se guarda (upsert por id),
      - lo que ya no está pasa a inactivo (active = false), así el historial
        viejo no se rompe; los bloques sin uso sí se borran.
-   Solo lo pueden hacer el administrador y la monitora (lo exige la base).
+   Solo lo pueden hacer el administrador y la jefa de calidad (lo exige la base).
    Los datos de ejemplo (sample) nunca se suben.
    ===================================================================== */
 (function () {
@@ -25,7 +25,7 @@
     return {
       bosses, workers,
       params: db.params,
-      areas: db.areas.map(a => ({ ...a, bossId: bOk.has(a.bossId) ? a.bossId : '', workerIds: (a.workerIds || []).filter(id => wOk.has(id)) }))
+      areas: db.areas.map(a => ({ ...a, bossId: bOk.has(a.bossId) ? a.bossId : '', workerIds: (a.workerIds || []).filter(id => wOk.has(id)), subs: (a.subs || []).map(x => ({ ...x, workerIds: (x.workerIds || []).filter(id => wOk.has(id)) })) }))
     };
   }
   const signature = db => JSON.stringify(payload(db));
@@ -59,7 +59,7 @@
     const { data: prof, error: pe } = await client.from('profiles').select('store_id, role, active').eq('id', user.id).maybeSingle();
     if (pe) throw friendly(pe, 'profiles');
     if (!prof || !prof.active || !prof.store_id) return { skipped: 'sin-local' };
-    if (!['administrador', 'monitora'].includes(prof.role)) return { skipped: 'rol' };
+    if (!['administrador', 'jefa_calidad'].includes(prof.role)) return { skipped: 'rol' };
     const store = prof.store_id;
 
     const c = payload(db);
@@ -87,7 +87,7 @@
 
     /* Trabajadores por área: se reemplaza el conjunto completo. */
     await ok(client.from('area_workers').delete().eq('store_id', store), 'area_workers');
-    const links = c.areas.flatMap(a => a.workerIds.map(w => ({ area_id: a.id, worker_id: w, store_id: store })));
+    const links = c.areas.flatMap(a => a.workerIds.map(w => ({ area_id: a.id, worker_id: w, store_id: store, sub: (((a.subs || []).find(x => (x.workerIds || []).includes(w))) || {}).name || '' })));
     for (const part of chunk(links, 200)) await ok(client.from('area_workers').insert(part), 'area_workers');
 
     await retire(client, 'checklist_items', new Set(items.map(x => x.id)));
