@@ -33,7 +33,7 @@
     } else if (/failed to fetch|networkerror|load failed|network request failed|fetch failed/i.test(raw)) {
       text = 'No hay conexión con la nube. Revisa internet e inténtalo de nuevo.';
     } else if (/does not exist|schema cache|could not find the table/i.test(raw)) {
-      text = 'Falta una tabla en la base de datos. Avísame y lo reviso.';
+      text = 'Falta una tabla o columna en la base de datos' + (table ? ` (${table})` : '') + '. Detalle: ' + raw.slice(0, 160) + ' — Si ya ejecutaste las migraciones, recarga el esquema en Supabase (notify pgrst, \'reload schema\').';
     } else {
       text = raw || 'No se pudieron leer los datos de la nube.';
     }
