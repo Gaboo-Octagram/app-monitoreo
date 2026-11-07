@@ -99,3 +99,7 @@ Actualizado: 28-10-2026. Estado actual: versión 2 funcionando, con datos guarda
 - Trasladar los datos actuales del navegador al local, una sola vez.
 - Definir qué ocurre al rechazar una auditoría (si la monitora corrige y
   reenvía).
+
+
+## Fase 8 — Usuarios desde Configuración
+Pestaña Usuarios (solo administrador) + Edge Function `admin-users` + cambio de contraseña propio. Ver `docs/usuarios-admin.md`.
