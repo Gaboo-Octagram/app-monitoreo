@@ -25,7 +25,12 @@
   let modal = null;
 
   const sb = () => window.sb || null;
+  /* Se entra con un nombre de usuario (ej. "monitora"); por dentro Supabase lo guarda como
+     correo usuario@USER_DOMAIN. Si lo escrito ya trae @, se usa tal cual (cuentas con correo real). */
+  const USER_DOMAIN = 'sistema-calidad.app';
+  const toEmail = v => { v = String(v || '').trim().toLowerCase(); return v.includes('@') ? v : v + '@' + USER_DOMAIN; };
   const mail = () => (session && session.user && session.user.email) || '';
+  const userLabel = () => { const m = mail(); return m.endsWith('@' + USER_DOMAIN) ? m.slice(0, -(USER_DOMAIN.length + 1)) : m; };
 
   function h(html) {
     const t = document.createElement('template');
@@ -35,7 +40,7 @@
 
   function friendly(message) {
     const m = String(message || '');
-    if (/invalid login credentials/i.test(m)) return 'Correo o contraseña incorrectos.';
+    if (/invalid login credentials/i.test(m)) return 'Usuario o contraseña incorrectos.';
     if (/email not confirmed/i.test(m)) return 'Falta confirmar el correo. Revisa tu bandeja de entrada.';
     if (/failed to fetch|networkerror|load failed|network request failed/i.test(m)) {
       return 'No hay conexión con Supabase. Revisa internet e inténtalo de nuevo.';
@@ -58,7 +63,7 @@
     if (!c) return;
     c.hidden = false;
     if (session) {
-      const name = (profile && profile.full_name) || mail() || 'Sesión iniciada';
+      const name = (profile && profile.full_name) || userLabel() || 'Sesión iniciada';
       const role = profile ? (ROLES[profile.role] || profile.role) : '';
       c.textContent = role ? `${name} · ${role}` : name;
       c.title = 'Ver mi cuenta';
@@ -133,11 +138,11 @@
           </div>
 
           <h2 id="loginTitle">Entrar</h2>
-          <p class="login-sub">Usa la cuenta creada en Supabase.</p>
+          <p class="login-sub">Entra con tu usuario y contraseña.</p>
 
           <form id="loginForm" novalidate>
-            <label class="field"><span>Correo</span>
-              <input id="loginEmail" type="email" autocomplete="username" inputmode="email" placeholder="nombre@correo.com" ${hasClient ? '' : 'disabled'}>
+            <label class="field"><span>Usuario</span>
+              <input id="loginEmail" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="Ej.: monitora" ${hasClient ? '' : 'disabled'}>
             </label>
             <label class="field"><span>Contraseña</span>
               <input id="loginPassword" type="password" autocomplete="current-password" placeholder="Tu contraseña" ${hasClient ? '' : 'disabled'}>
@@ -164,9 +169,9 @@
       const client = sb();
       if (!client) { setLoginError('No se pudo cargar la conexión con Supabase.'); return; }
 
-      const email = overlay.querySelector('#loginEmail').value.trim();
+      const user = overlay.querySelector('#loginEmail').value.trim(), email = toEmail(user);
       const password = overlay.querySelector('#loginPassword').value;
-      if (!email || !password) { setLoginError('Escribe tu correo y tu contraseña.'); return; }
+      if (!user || !password) { setLoginError('Escribe tu usuario y tu contraseña.'); return; }
 
       setLoginError('');
       setBusy(true);
@@ -225,7 +230,7 @@
             <div class="account-row"><span>Nombre</span><strong>${esc(name)}</strong></div>
             <div class="account-row"><span>Rol</span><strong>${esc(role)}</strong></div>
             <div class="account-row"><span>Local</span><strong>${esc(store)}</strong></div>
-            <div class="account-row"><span>Correo</span><strong>${esc(mail())}</strong></div>
+            <div class="account-row"><span>Usuario</span><strong>${esc(userLabel())}</strong></div>
             <p class="account-note">
               Por ahora la app sigue usando los datos de este navegador. Los permisos
               por rol se aplicarán cuando conectemos las auditorías a Supabase.
