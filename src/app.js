@@ -82,7 +82,7 @@ const ui = {
   openAreas: new Set(), openDays: new Set(), closedObs: new Set(), invalid: new Set(), init: false,
   hist: { q: '', area: '', from: '', to: '', only: '' },
   sum: { period: 'week', ref: todayISO(), weeks: 3 },
-  cfgTab: 'areas', cfgArea: '', cfgSub: '',
+  cfgTab: 'areas', cfgArea: '', cfgSub: '', users: { list: null, loading: false, error: '' },
   groups: { open: new Set(), closed: new Set() }   // meses y semanas del Historial
 };
 
@@ -945,16 +945,16 @@ window.addEventListener('afterprint', () => { $('#printArea').innerHTML = ''; })
 /* =====================================================================
    VISTA: CONFIGURACIÓN
    ===================================================================== */
-const CFG_TABS = [['areas', 'Áreas'], ['workers', 'Trabajadores'], ['bosses', 'Jefes responsables'], ['checklists', 'Sub-áreas y checklists'], ['params', 'Parámetros de personal'], ['files', 'Archivos'], ['general', 'General']];
+const CFG_TABS = [['areas', 'Áreas'], ['workers', 'Trabajadores'], ['bosses', 'Jefes responsables'], ['checklists', 'Sub-áreas y checklists'], ['params', 'Parámetros de personal'], ['files', 'Archivos'], ['users', 'Usuarios'], ['general', 'General']];
 
 /* La jefa solo edita el catálogo; archivos, respaldo y borrado local son del administrador / modo sin conexión. */
-const cfgTabs = () => (headMode ? CFG_TABS.filter(([k]) => !['files', 'general'].includes(k)) : CFG_TABS);
+const cfgTabs = () => CFG_TABS.filter(([k]) => (headMode ? !['files', 'general', 'users'].includes(k) : k !== 'users' || authRole === 'administrador'));
 function viewConfig() {
   if (!cfgTabs().some(([k]) => k === ui.cfgTab)) ui.cfgTab = 'areas';
   return `<div class="tabs" role="tablist">${cfgTabs().map(([k, l]) => `<button class="tab ${ui.cfgTab === k ? 'active' : ''}" role="tab" data-action="cfg-tab" data-tab="${k}">${l}</button>`).join('')}</div>${cfgTabHTML()}`;
 }
 function cfgTabHTML() {
-  return ({ areas: cfgAreas, workers: cfgWorkers, bosses: cfgBosses, checklists: cfgChecklists, params: cfgParams, files: cfgFiles, general: cfgGeneral })[ui.cfgTab]();
+  return ({ areas: cfgAreas, workers: cfgWorkers, bosses: cfgBosses, checklists: cfgChecklists, params: cfgParams, files: cfgFiles, users: cfgUsers, general: cfgGeneral })[ui.cfgTab]();
 }
 const sectionHead = (title, btn) => `<div class="section-head"><h2>${title}</h2>${btn || ''}</div>`;
 const tableWrap = (heads, rows, empty) => rows.length
@@ -983,6 +983,32 @@ function areaForm(a) {
     }
   });
 }
+
+/* ----- Usuarios (solo administrador; pasa por la Edge Function admin-users) ----- */
+async function loadUsers() {
+  const u = ui.users; u.loading = true; u.error = '';
+  try { u.list = await SCUsers.list(); } catch (e) { u.error = e.message; u.list = u.list || []; }
+  u.loading = false;
+  if (ui.cfgTab === 'users' && location.hash === '#/config') render(true);
+}
+const userRoleSelect = x => `<select data-change="user-role" data-id="${x.id}" aria-label="Rol de ${esc(x.full_name)}" ${x.is_me ? 'disabled title="No puedes cambiar tu propio rol"' : ''}>${SCUsers.ROLES.map(r => `<option value="${r}" ${r === x.role ? 'selected' : ''}>${esc(SCUsers.ROLE_LABEL[r])}</option>`).join('')}</select>`;
+function cfgUsers() {
+  const u = ui.users;
+  if (!u.list && !u.loading) loadUsers();
+  const head = sectionHead('Usuarios', `<div style="display:flex;gap:8px"><button class="btn" data-action="reload-users">Actualizar</button><button class="btn primary" data-action="add-user">+ Nuevo usuario</button></div>`);
+  const note = `<p class="hint" style="margin:-4px 0 12px">Cada persona entra con su <b>usuario</b> y su contraseña. El rol decide qué ve y qué puede hacer; se puede cambiar cuando haga falta. Desactivar bloquea el acceso sin borrar su historial.</p>`;
+  if (!u.list) return head + note + `<div class="card empty"><p>${u.error ? esc(u.error) : 'Cargando usuarios…'}</p></div>`;
+  return head + note + (u.error ? `<div class="banner" role="alert">${esc(u.error)}</div>` : '') + tableWrap(['Nombre', 'Usuario', 'Rol', 'Estado', 'Último acceso', ''], u.list.map(x => `<tr>
+    <td><b>${esc(x.full_name || '—')}</b>${x.is_me ? ' <span class="muted">(tú)</span>' : ''}</td>
+    <td>${esc(x.username)}</td><td>${userRoleSelect(x)}</td>
+    <td>${x.active ? '<span class="pill ok">Activo</span>' : '<span class="pill nok">Desactivado</span>'}</td>
+    <td class="muted">${x.last_sign_in_at ? esc(fmtDate(x.last_sign_in_at.slice(0, 10))) : 'Nunca'}</td>
+    <td class="actions"><button class="btn sm" data-action="user-name" data-id="${x.id}">Nombre</button> <button class="btn sm" data-action="user-pass" data-id="${x.id}">Contraseña</button>${x.is_me ? '' : ` <button class="btn sm ghost" data-action="user-active" data-id="${x.id}" data-active="${x.active ? '0' : '1'}">${x.active ? 'Desactivar' : 'Activar'}</button>`}</td></tr>`), 'Sin usuarios.');
+}
+const userAct = async (fn, okMsg) => {
+  try { await fn(); if (okMsg) toast(okMsg); } catch (e) { toast(e.message, 'error'); }
+  await loadUsers();
+};
 
 function cfgWorkers() {
   return sectionHead('Trabajadores', `<button class="btn primary" data-action="add-worker">+ Nuevo trabajador</button>`) +
@@ -1267,7 +1293,49 @@ document.addEventListener('click', async e => {
     case 'report': openReport(); break;
     case 'logo-clear': db.settings.reportLogo = ''; await save(); render(true); break;
     /* Configuración */
-    case 'cfg-tab': ui.cfgTab = el.dataset.tab; render(true); break;
+    case 'cfg-tab': ui.cfgTab = el.dataset.tab; if (ui.cfgTab === 'users') ui.users.list = null; render(true); break;
+    case 'reload-users': ui.users.list = null; render(true); break;
+    case 'add-user':
+      formModal({
+        title: 'Nuevo usuario', submitLabel: 'Crear usuario',
+        fields: [
+          { name: 'full_name', label: 'Nombre completo', required: true, placeholder: 'Ej.: Gabriel Andrés Sanhueza Muñoz' },
+          { name: 'username', label: 'Usuario (con el que entra)', required: true, placeholder: 'Ej.: GaSanhueza' },
+          { name: 'role', label: 'Rol', type: 'select', options: SCUsers.ROLES.map(r => ({ value: r, label: SCUsers.ROLE_LABEL[r] })), default: 'monitora' },
+          { name: 'password', label: 'Contraseña (mínimo 8 caracteres)', type: 'password', required: true },
+          { name: 'password2', label: 'Repite la contraseña', type: 'password', required: true }
+        ],
+        onSubmit: d => {
+          if (d.password !== d.password2) { toast('Las contraseñas no coinciden.', 'error'); return false; }
+          if (d.password.length < 8) { toast('La contraseña debe tener al menos 8 caracteres.', 'error'); return false; }
+          userAct(() => SCUsers.create({ full_name: d.full_name, username: d.username, role: d.role, password: d.password }), `Usuario "${d.username.toLowerCase()}" creado.`);
+        }
+      });
+      break;
+    case 'user-name': {
+      const x = (ui.users.list || []).find(y => y.id === id);
+      if (x) formModal({ title: 'Cambiar nombre', values: { full_name: x.full_name }, fields: [{ name: 'full_name', label: 'Nombre completo', required: true }], onSubmit: d => { userAct(() => SCUsers.rename(id, d.full_name), 'Nombre actualizado.'); } });
+      break;
+    }
+    case 'user-pass': {
+      const x = (ui.users.list || []).find(y => y.id === id);
+      if (x) formModal({
+        title: `Nueva contraseña para ${x.full_name}`, submitLabel: 'Cambiar contraseña',
+        fields: [{ name: 'password', label: 'Contraseña nueva (mínimo 8 caracteres)', type: 'password', required: true }, { name: 'password2', label: 'Repítela', type: 'password', required: true }],
+        onSubmit: d => {
+          if (d.password !== d.password2) { toast('Las contraseñas no coinciden.', 'error'); return false; }
+          if (d.password.length < 8) { toast('La contraseña debe tener al menos 8 caracteres.', 'error'); return false; }
+          userAct(() => SCUsers.setPassword(id, d.password), 'Contraseña cambiada.');
+        }
+      });
+      break;
+    }
+    case 'user-active': {
+      const x = (ui.users.list || []).find(y => y.id === id), on = el.dataset.active === '1';
+      if (x && (on || await confirmBox(`¿Desactivar a ${x.full_name}? No podrá entrar hasta que la actives de nuevo. Su historial se conserva.`, 'Desactivar', true)))
+        userAct(() => SCUsers.setActive(id, on), on ? 'Usuario activado.' : 'Usuario desactivado.');
+      break;
+    }
     case 'add-area': areaForm(); break;
     case 'edit-area': areaForm(area()); break;
     case 'del-area':
@@ -1372,6 +1440,10 @@ document.addEventListener('input', e => {
 });
 document.addEventListener('change', async e => {
   const t = e.target, c = t.dataset && t.dataset.change;
+  if (c === 'user-role') {
+    const x = (ui.users.list || []).find(y => y.id === t.dataset.id);
+    if (x && t.value !== x.role) userAct(() => SCUsers.setRole(x.id, t.value), `Rol de ${x.full_name}: ${SCUsers.ROLE_LABEL[t.value]}.`);
+  }
   if (c === 'cfg-area') { ui.cfgArea = t.value; ui.cfgSub = ''; render(true); }
   if (c === 'sub-add-worker' && t.value) {
     const a = ensureSubs(db.areas.find(x => x.id === ui.cfgArea)), g = a.subs.find(x => x.id === ui.cfgSub);
