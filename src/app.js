@@ -879,7 +879,7 @@ function viewResumen() {
     <div class="card kpi"><div class="label">Auditorías (días)</div><div class="value">${s.audits.length}</div><div class="sub2">${s.items.length} ${plural(s.items.length, 'evaluación de área', 'evaluaciones de área')}</div></div>
     <div class="card kpi"><div class="label">Checks evaluados</div><div class="value">${s.entries.length}</div><div class="sub2">${okN} conformes</div></div>
     <div class="card kpi"><div class="label">No conformidades</div><div class="value" style="color:${s.nokEntries.length ? 'var(--nok)' : 'inherit'}">${s.nokEntries.length}</div><div class="sub2">hallazgos registrados</div></div></div>
-    <div class="mid">
+    <div class="mid-grid">
       <div class="card panel"><h3>Hallazgos más repetidos</h3>${s.topFindings.length ? `<ul class="rank">${s.topFindings.map(([k, n]) => { const [t, a] = k.split('||'); return `<li><span>${esc(t)}<small>${esc(a)}</small></span><span class="count">${n}</span></li>`; }).join('')}</ul>` : '<p class="muted">Sin no conformidades en el período.</p>'}</div>
       <div class="card panel"><h3>Personal con más hallazgos</h3>${s.topWorkers.length ? `<ul class="rank">${s.topWorkers.map(([w, n]) => `<li><span>${esc(w)}</span><span class="count">${n}</span></li>`).join('')}</ul>` : '<p class="muted">Sin hallazgos asociados a personal.</p>'}</div>
       <div class="card panel mid-wide"><h3>Cumplimiento por categoría</h3>${s.byCat.map(c => barRow(c.name, c.pct)).join('')}
