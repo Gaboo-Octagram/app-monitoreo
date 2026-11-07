@@ -439,9 +439,9 @@ tr.invalid td{box-shadow:none;background:var(--nok-soft)}
 .cmp-line .bar-val{text-align:right;font-size:.85em}
 
 /* Resumen: rankings a la izquierda, categoría + tendencia a la derecha */
-.mid{display:grid;grid-template-columns:1fr 1fr 2fr;gap:14px;margin-bottom:14px;align-items:start}
-@media (max-width:1100px){.mid{grid-template-columns:1fr 1fr}.mid .mid-wide{grid-column:1 / -1}}
-@media (max-width:640px){.mid{grid-template-columns:1fr}}
+.mid-grid{display:grid;grid-template-columns:1fr 1fr 2fr;gap:14px;margin-bottom:14px;align-items:start}
+@media (max-width:1100px){.mid-grid{grid-template-columns:1fr 1fr}.mid-grid .mid-wide{grid-column:1 / -1}}
+@media (max-width:640px){.mid-grid{grid-template-columns:1fr}}
 .cmp-svg{width:100%;height:auto;display:block}
 .cmp-svg .g{stroke:var(--border);stroke-width:1}
 .cmp-svg .ax{fill:var(--muted);font-size:13px}
