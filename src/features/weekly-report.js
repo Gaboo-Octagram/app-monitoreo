@@ -27,6 +27,7 @@
   const mondayOf = s => { const d = parse(s); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return iso(d); };
   const addDays = (s, n) => { const d = parse(s); d.setDate(d.getDate() + n); return iso(d); };
   const avg = a => a.length ? Math.round(a.reduce((x, y) => x + y, 0) / a.length) : null;
+  const blockPctOf = b => b.pct != null ? b.pct : pctOf(b.entries);
   const pctOf = entries => {
     const r = entries.filter(e => e.status === 'ok' || e.status === 'nok');
     return r.length ? Math.round(r.filter(e => e.status === 'ok').length / r.length * 100) : null;
@@ -57,7 +58,8 @@
     const weeks = [];
     for (let i = WEEKS_BACK; i >= 0; i--) { const s = addDays(start, -7 * i); weeks.push({ start: s, end: addDays(s, 6), n: isoWeek(s).week }); }
     const inWeek = (a, w) => a.date >= w.start && a.date <= w.end;
-    const results = (w) => db.audits.filter(a => inWeek(a, w)).flatMap(a => a.areas.filter(r => r.areaId === areaId && !r.notEvaluated).map(r => ({ date: a.date, r })));
+    const allAudits = (window.SCImport ? SCImport.all(db) : db.audits);
+    const results = (w) => allAudits.filter(a => inWeek(a, w)).flatMap(a => a.areas.filter(r => r.areaId === areaId && !r.notEvaluated).map(r => ({ date: a.date, r })));
     const blocksOf = (w) => results(w).flatMap(x => (x.r.blocks || []).map(b => ({ date: x.date, b })));
 
     const cur = weeks[weeks.length - 1], curBlocks = blocksOf(cur);
@@ -66,11 +68,11 @@
     const order = [];
     curBlocks.forEach(({ b }) => { if (!order.some(o => o.key === keyOf(b))) order.push({ key: keyOf(b), type: b.type, label: b.label }); });
     const subOf = label => { const m = /\((.+)\)\s*$/.exec(label || ''); return m ? m[1] : ''; };
-    const valueAt = (key, w) => avg(blocksOf(w).filter(x => keyOf(x.b) === key).map(x => pctOf(x.b.entries)).filter(v => v !== null));
+    const valueAt = (key, w) => avg(blocksOf(w).filter(x => keyOf(x.b) === key).map(x => blockPctOf(x.b)).filter(v => v !== null));
 
     /* Semana anterior = última semana previa con auditoría de la sala (hasta 2 años atrás). */
     const prevStartFor = () => {
-      const earlier = db.audits.filter(a => a.date < cur.start && a.areas.some(r => r.areaId === areaId && !r.notEvaluated)).map(a => a.date).sort();
+      const earlier = allAudits.filter(a => a.date < cur.start && a.areas.some(r => r.areaId === areaId && !r.notEvaluated)).map(a => a.date).sort();
       return earlier.length ? mondayOf(earlier[earlier.length - 1]) : null;
     };
     const ps = prevStartFor(), prevW = ps ? { start: ps, end: addDays(ps, 6), n: isoWeek(ps).week } : null;

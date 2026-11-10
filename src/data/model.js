@@ -67,7 +67,7 @@ function normalizeDB(d) {
   d = d && typeof d === 'object' ? d : seed();
   d.settings = Object.assign({ evaluator: '', store: '', goal: 90 }, REPORT_DEFAULTS, d.settings || {});
   if (!Array.isArray(d.params)) d.params = mkItems(DEFAULT_PARAMS);
-  ['bosses', 'workers', 'areas', 'audits'].forEach(k => { if (!Array.isArray(d[k])) d[k] = []; });
+  ['bosses', 'workers', 'areas', 'audits', 'imported'].forEach(k => { if (!Array.isArray(d[k])) d[k] = []; });
   d.areas.forEach(a => {
     ensureSubs(a);
   });
