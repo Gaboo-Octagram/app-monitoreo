@@ -95,7 +95,7 @@ const pct = entries => {
 };
 const pctClass = p => p === null || p === undefined ? 'none' : p >= db.settings.goal ? 'ok' : p >= db.settings.goal - 15 ? 'warn' : 'nok';
 const pillHTML = p => `<span class="pill ${pctClass(p)}">${p === null ? 'Sin datos' : p + '%'}</span>`;
-const blockPct = b => pct(b.entries);
+const blockPct = b => b.pct != null ? b.pct : pct(b.entries);
 const areaPct = r => r.notEvaluated ? null : avg((r.blocks || []).map(blockPct).filter(p => p !== null));
 
 /* Modelo de una área a partir del borrador actual de Inicio */
@@ -813,7 +813,7 @@ function weeksCompareData(n) {
   const cats = ['trabajadores', 'limpieza', 'orden'].map(type => {
     const areas = db.areas.map(a => {
       const vals = weeks.map(w => {
-        const ps = db.audits.filter(x => x.date >= w.start && x.date <= w.end)
+        const ps = SCImport.all(db).filter(x => x.date >= w.start && x.date <= w.end)
           .flatMap(x => x.areas.filter(r => r.areaId === a.id && !r.notEvaluated).flatMap(r => (r.blocks || []).filter(b => b.type === type).map(blockPct)))
           .filter(v => v !== null);
         return avg(ps);
@@ -1094,8 +1094,92 @@ function cfgParams() {
       <form class="cl-add" data-form="add-param"><input type="text" name="text" placeholder="Nuevo parámetro…" aria-label="Nuevo parámetro" required><button class="btn sm primary">Agregar</button></form></div>`;
 }
 
+const IMP_CAT = { trabajadores: 'Presentación Personal', limpieza: 'Limpieza', orden: 'Orden' };
+function cfgImported() {
+  const list = (db.imported || []).slice().sort((a, b) => b.start.localeCompare(a.start) || a.areaName.localeCompare(b.areaName));
+  return sectionHead('Informes semanales importados (solo porcentajes)') +
+    `<div class="dropzone"><p style="margin-bottom:10px">Sube los informes Word de semanas anteriores (por ejemplo "Informe Sala Teja Food Semana 41"). Se leen solo los porcentajes de cada categoría y sub-área; después podrás revisarlos antes de guardar. Sirven para el Resumen y para el informe semanal. Quedan en este navegador y no se suben a la nube.</p>
+      <label class="btn primary" style="cursor:pointer">Importar informes (Word)<input type="file" id="reportImportInput" accept=".docx" multiple hidden></label></div>` +
+    tableWrap(['Semana', 'Área', 'Valores', ''], list.map(im => `<tr><td><b>Semana ${im.week}</b> <span class="muted">· ${im.year}</span></td><td>${esc(im.areaName)}</td>
+      <td class="muted">${im.rows.map(r => `${IMP_CAT[r.type]}${r.sub ? ' ' + esc(r.sub) : ''}: ${r.pct}%`).join(' · ')}</td>
+      <td class="actions"><button class="btn sm ghost" data-action="del-import" data-id="${im.id}">Eliminar</button></td></tr>`), 'Aún no hay informes importados.');
+}
+
+function importReview(items) {
+  const yearNow = new Date().getFullYear();
+  const subOptions = (area, cur) => {
+    const names = (area ? area.subs : []).map(x => x.name);
+    const match = names.find(n => SCImport.norm(n) === SCImport.norm(cur));
+    return `<select data-imp-f="sub">${cur && !match ? `<option value="${esc(cur)}" selected>${esc(cur)} (sin coincidencia)</option>` : ''}<option value="" ${!cur ? 'selected' : ''}>—</option>${names.map(n => `<option value="${esc(n)}" ${n === match ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select>`;
+  };
+  const card = (it, i) => {
+    const area = db.areas.find(a => a.id === it.areaId);
+    const real = area && it.week ? db.audits.some(a => a.date >= SCImport.weekStart(it.year, it.week) && a.date <= isoOf(new Date(parseISO(SCImport.weekStart(it.year, it.week)).getTime() + 6 * 864e5)) && a.areas.some(r => r.areaId === area.id && !r.notEvaluated)) : false;
+    return `<section class="card imp-card" data-imp="${i}">
+      <h4>${esc(it.name)}</h4>
+      ${it.error ? `<p class="hint" style="color:var(--bad,#ff8a8a)">${esc(it.error)}</p>` : `
+      <div class="imp-top">
+        <label class="field"><span>Área</span><select data-imp-f="area"><option value="">— elegir —</option>${db.areas.map(a => `<option value="${a.id}" ${a.id === it.areaId ? 'selected' : ''}>${esc(a.name)}</option>`).join('')}</select></label>
+        <label class="field"><span>Semana</span><input type="number" min="1" max="53" data-imp-f="week" value="${it.week || ''}"></label>
+        <label class="field"><span>Año</span><input type="number" min="2000" max="2100" data-imp-f="year" value="${it.year}"></label>
+      </div>
+      ${!it.areaId ? `<p class="hint">No encontré el área "${esc(it.areaName)}" en tu catálogo. Elígela para poder guardar.</p>` : ''}
+      ${real ? `<p class="hint">Ojo: esa semana ya tiene auditorías reales de esta área; los valores se mezclarían con los importados.</p>` : ''}
+      <table class="tbl imp-tbl"><thead><tr><th>Categoría</th><th>Sub-área</th><th>% semana</th></tr></thead><tbody>${it.rows.map((r, j) => `<tr data-r="${j}"><td>${esc(IMP_CAT[r.type])}</td><td>${subOptions(area, r.sub)}</td><td><input type="number" min="0" max="100" data-imp-f="pct" value="${r.pct}"> %</td></tr>`).join('')}</tbody></table>`}
+    </section>`;
+  };
+  const body = it => `<p class="hint" style="padding-top:0">Revisa que cada área, semana y porcentaje coincida con el Word. Solo se guardan los informes con área elegida.</p>${it.map(card).join('')}`;
+  const readOK = it => it.filter(x => !x.error && x.areaId && x.week >= 1 && x.week <= 53 && x.rows.length);
+  modal({
+    title: 'Revisar informes a importar', wide: true, body: body(items),
+    buttons: [{ label: 'Cancelar' }, {
+      label: 'Guardar importación', cls: 'primary', onClick: async () => {
+        const ok = readOK(items);
+        if (!ok.length) { toast('No hay informes listos: elige el área y revisa la semana.', 'error'); return false; }
+        if (ok.some(x => x.rows.some(r => !(r.pct >= 0 && r.pct <= 100)))) { toast('Hay porcentajes fuera de 0 a 100.', 'error'); return false; }
+        db.imported = db.imported || [];
+        ok.forEach(x => {
+          const a = db.areas.find(y => y.id === x.areaId);
+          db.imported = db.imported.filter(im => !(im.areaId === x.areaId && im.year === x.year && im.week === x.week));
+          db.imported.push({ id: uid(), year: x.year, week: x.week, start: SCImport.weekStart(x.year, x.week), areaId: a.id, areaName: a.name,
+            rows: x.rows.map(r => ({ type: r.type, sub: r.sub, pct: r.pct })), importedAt: new Date().toISOString() });
+        });
+        if (!await save()) return false;
+        render(true);
+        toast(`${ok.length} ${plural(ok.length, 'informe importado', 'informes importados')}.`);
+      }
+    }],
+    onOpen: m => {
+      const redraw = () => { $('.modal-body', m).innerHTML = body(items); };
+      m.addEventListener('change', e => {
+        const t = e.target, f = t.dataset.impF, c = t.closest('[data-imp]'); if (!f || !c) return;
+        const it = items[+c.dataset.imp];
+        if (f === 'area') { it.areaId = t.value; it.rows.forEach(r => { const a = db.areas.find(y => y.id === it.areaId); const mt = a && a.subs.find(x => SCImport.norm(x.name) === SCImport.norm(r.sub)); if (mt) r.sub = mt.name; }); redraw(); }
+        else if (f === 'week') { it.week = parseInt(t.value, 10) || 0; redraw(); }
+        else if (f === 'year') { it.year = parseInt(t.value, 10) || yearNow; redraw(); }
+        else { const r = it.rows[+t.closest('tr').dataset.r]; if (f === 'pct') r.pct = parseFloat(t.value); else r.sub = t.value; }
+      });
+    }
+  });
+}
+async function handleImport(list) {
+  const items = [], yearNow = new Date().getFullYear();
+  for (const file of [...list]) {
+    const it = { name: file.name, areaName: '', areaId: '', week: 0, year: yearNow, rows: [], error: '' };
+    try {
+      const rep = SCImport.parseReport(await SCImport.readDocx(await file.arrayBuffer()));
+      it.areaName = rep.areaName; it.week = rep.week; it.rows = rep.rows;
+      const a = db.areas.find(x => SCImport.norm(x.name) === SCImport.norm(rep.areaName)) || db.areas.find(x => { const a = SCImport.norm(x.name), b = SCImport.norm(rep.areaName); return a && b && (a.includes(b) || b.includes(a)); });
+      if (a) { it.areaId = a.id; it.rows.forEach(r => { const mt = a.subs.find(x => SCImport.norm(x.name) === SCImport.norm(r.sub)); if (mt) r.sub = mt.name; }); }
+      if (!rep.rows.length) it.error = 'No encontré porcentajes en este archivo. ¿Es un informe semanal con "Semana N: 95%"?';
+    } catch (e) { it.error = e.message || 'No se pudo leer el archivo. Debe ser un Word (.docx).'; }
+    items.push(it);
+  }
+  if (items.length) importReview(items);
+}
+
 function cfgFiles() {
-  return sectionHead('Archivos e informes anteriores') +
+  return cfgImported() + sectionHead('Archivos e informes anteriores') +
     `<div class="dropzone"><p style="margin-bottom:10px">Sube informes previos (PDF, Word, Excel, imágenes). Máximo 1,5 MB por archivo.</p>
       <label class="btn primary" style="cursor:pointer">Seleccionar archivos<input type="file" id="fileInput" multiple hidden></label></div>` +
     tableWrap(['Archivo', 'Tamaño', 'Subido', ''], files.map(f => `<tr><td><strong>${esc(f.name)}</strong></td><td>${fmtSize(f.size)}</td><td>${fmtDate(f.date)}</td>
@@ -1300,6 +1384,9 @@ document.addEventListener('click', async e => {
     case 'report': openReport(); break;
     case 'logo-clear': db.settings.reportLogo = ''; await save(); render(true); break;
     /* Configuración */
+    case 'del-import':
+      if (await confirmBox('¿Eliminar este informe importado? Dejará de verse en el Resumen y en el informe semanal.', 'Eliminar', true)) { db.imported = (db.imported || []).filter(im => im.id !== id); await save(); render(true); }
+      break;
     case 'audit-today': ui.auditDate = ''; render(true); break;
     case 'cfg-tab': ui.cfgTab = el.dataset.tab; if (ui.cfgTab === 'users') ui.users.list = null; render(true); break;
     case 'reload-users': ui.users.list = null; render(true); break;
@@ -1462,6 +1549,7 @@ document.addEventListener('change', async e => {
   }
   if (t.dataset && t.dataset.sum === 'ref' && t.value) { ui.sum.ref = t.value; render(true); }
   if (t.id === 'fileInput') { handleFiles(t.files); t.value = ''; }
+  if (t.id === 'reportImportInput') { const fl = [...t.files]; t.value = ''; handleImport(fl); }
   if (t.id === 'importInput' && t.files[0]) importBackup(t.files[0]);
   if (t.id === 'logoInput' && t.files[0]) { try { db.settings.reportLogo = await compressImage(t.files[0]); await save(); render(true); toast('Logo guardado.'); } catch (err) { toast('No se pudo leer la imagen.', 'error'); } t.value = ''; }
   if (t.hasAttribute && t.hasAttribute('data-photo-input')) {
