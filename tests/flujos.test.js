@@ -239,6 +239,21 @@ const check = (n, c) => { console.log((c ? 'OK   ' : 'FALLA') + ' ' + n); if (!c
   check('Foto: lightbox se cierra', !t2.$('.lightbox'));
   check('Hallazgo sin texto muestra "Sin observación registrada"', /Sin observación registrada/.test(t2.$('.hcard').textContent));
 
+  /* ===== Fecha de la evaluación (Inicio) ===== */
+  const t3 = boot(); await t3.tick();
+  const di = t3.$('[data-change="audit-date"]');
+  const hoy = di.value;
+  check('Inicio: selector de fecha con hoy por defecto y sin fechas futuras', /^\d{4}-\d{2}-\d{2}$/.test(hoy) && di.max === hoy);
+  di.value = '2026-11-03'; di.dispatchEvent(new t3.w.Event('change', { bubbles: true })); await t3.tick();
+  check('Inicio: al elegir otro día lo indica y ofrece volver a hoy', /3 de noviembre/.test(t3.$('.audit-date').textContent) && !!t3.$('[data-action="audit-today"]'));
+  t3.click(t3.$$('[data-area] [data-action="mark"][data-s="ok"]')[0]); await t3.tick();
+  t3.click(t3.$('[data-action="save-audit"]')); await t3.tick(40);
+  if (t3.$('.modal')) { t3.click(t3.foot(1)); await t3.tick(40); }
+  check('Se guarda con la fecha elegida (no hoy)', t3.db().audits.length === 1 && t3.db().audits[0].date === '2026-11-03');
+  check('Tras guardar la fecha vuelve a hoy', t3.$('[data-change="audit-date"]').value === hoy);
+  const di2 = t3.$('[data-change="audit-date"]'); di2.value = '2999-01-01'; di2.dispatchEvent(new t3.w.Event('change', { bubbles: true })); await t3.tick();
+  check('Una fecha futura se ignora', t3.$('[data-change="audit-date"]').value === hoy);
+
   console.log('\n' + (errors.length ? 'ERRORES:\n' + errors.join('\n') : 'TODO OK — sin errores de consola'));
   process.exit(errors.length ? 1 : 0);
 })().catch(e => { console.log('EXCEPCIÓN', e); process.exit(2); });
