@@ -81,6 +81,7 @@ const dEnsure = id => { const d = drafts[id] = drafts[id] || {}; d.checks = d.ch
 const ui = {
   openAreas: new Set(), openDays: new Set(), closedObs: new Set(), invalid: new Set(), init: false,
   hist: { q: '', area: '', from: '', to: '', only: '' },
+  auditDate: '',
   sum: { period: 'week', ref: todayISO(), weeks: 3 },
   cfgTab: 'areas', cfgArea: '', cfgSub: '', users: { list: null, loading: false, error: '' },
   groups: { open: new Set(), closed: new Set() }   // meses y semanas del Historial
@@ -233,13 +234,19 @@ function overallStats() {
   const ms = db.areas.map(areaModel);
   return { total: ms.reduce((s, m) => s + m.total, 0), done: ms.reduce((s, m) => s + m.done, 0), areasDone: ms.filter(m => m.status === 'done').length, n: ms.length };
 }
-const overallHTML = () => { const o = overallStats(); return `<strong>Auditoría de hoy:</strong> ${o.done}/${o.total} checks · ${o.areasDone} de ${o.n} ${plural(o.n, 'área completada', 'áreas completadas')}`; };
+const auditDay = () => (ui.auditDate && ui.auditDate <= todayISO()) ? ui.auditDate : todayISO();
+const overallHTML = () => { const o = overallStats(); return `<strong>Auditoría ${auditDay() === todayISO() ? 'de hoy' : 'del ' + fmtDate(auditDay())}:</strong> ${o.done}/${o.total} checks · ${o.areasDone} de ${o.n} ${plural(o.n, 'área completada', 'áreas completadas')}`; };
 
 function viewInicio() {
   if (!db.areas.length) return emptyState('Aún no hay áreas', 'Crea las áreas del supermercado y sus checklists en Configuración.', 'Ir a Configuración', '#/config');
   if (!ui.init) { ui.init = true; ui.openAreas.add(db.areas[0].id); }
-  const today = db.audits.find(r => r.date === todayISO());
-  return `${today ? `<div class="banner">Ya hay una auditoría guardada hoy (${fmtTime(today.ts)}). Al guardar, los resultados nuevos se combinarán con ella: no se crea otra fila en el Historial.</div>` : ''}
+  const day = auditDay(), isToday = day === todayISO(), existing = db.audits.find(r => r.date === day);
+  return `<div class="card audit-date">
+      <label class="field"><span>Fecha de la evaluación</span><input type="date" data-change="audit-date" value="${day}" max="${todayISO()}"></label>
+      ${isToday ? '' : `<button class="btn sm" data-action="audit-today">Volver a hoy</button>`}
+      <p class="hint">${isToday ? 'Por defecto es hoy. Cámbiala si estás pasando una evaluación de otro día.' : `Estás registrando la evaluación del <b>${esc(longDate(new Date(day + 'T12:00:00')))}</b>.`}</p>
+    </div>
+    ${existing ? `<div class="banner">Ya hay una auditoría guardada el ${esc(fmtDate(day))} (${fmtTime(existing.ts)}). Al guardar, los resultados nuevos se combinarán con ella: no se crea otra fila en el Historial.</div>` : ''}
     <div class="toolbar"><div class="chip" id="overall">${overallHTML()}</div></div>
     <div id="areaList">${db.areas.map(areaCardHTML).join('')}</div>
     <div class="save-bar">
@@ -467,7 +474,7 @@ async function saveAudit() {
   if (lines.length && !await confirmBox(`Hay pendientes en esta auditoría:\n${lines.join('\n')}\n¿Guardar de todas formas?`, 'Guardar igual', false, 'Hay pendientes')) return;
 
   const results = db.areas.map(buildAreaResult);
-  const day = todayISO(), now = new Date().toISOString();
+  const day = auditDay(), now = new Date().toISOString();
   const snapshot = JSON.stringify(db.audits);
   let aud = db.audits.find(r => r.date === day);
   if (aud) {
@@ -480,7 +487,7 @@ async function saveAudit() {
     db.audits.push(aud);
   }
   if (!await save()) { db.audits = JSON.parse(snapshot); return; }
-  saveDraftsSoon.cancel(); drafts = {}; await saveDrafts(); ui.openAreas = new Set(); ui.init = false;
+  saveDraftsSoon.cancel(); drafts = {}; await saveDrafts(); ui.openAreas = new Set(); ui.init = false; ui.auditDate = '';
   render();
   toast('Auditoría guardada en el Historial.');
   if (catalogRetry) adoptCloudCatalog();
@@ -1293,6 +1300,7 @@ document.addEventListener('click', async e => {
     case 'report': openReport(); break;
     case 'logo-clear': db.settings.reportLogo = ''; await save(); render(true); break;
     /* Configuración */
+    case 'audit-today': ui.auditDate = ''; render(true); break;
     case 'cfg-tab': ui.cfgTab = el.dataset.tab; if (ui.cfgTab === 'users') ui.users.list = null; render(true); break;
     case 'reload-users': ui.users.list = null; render(true); break;
     case 'add-user':
@@ -1440,6 +1448,7 @@ document.addEventListener('input', e => {
 });
 document.addEventListener('change', async e => {
   const t = e.target, c = t.dataset && t.dataset.change;
+  if (c === 'audit-date') { ui.auditDate = t.value && t.value <= todayISO() ? t.value : ''; render(true); return; }
   if (c === 'user-role') {
     const x = (ui.users.list || []).find(y => y.id === t.dataset.id);
     if (x && t.value !== x.role) userAct(() => SCUsers.setRole(x.id, t.value), `Rol de ${x.full_name}: ${SCUsers.ROLE_LABEL[t.value]}.`);
