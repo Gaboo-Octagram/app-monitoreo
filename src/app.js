@@ -311,7 +311,7 @@ function blockCardHTML(m, x, p) {
         <button class="rd ok ${st === 'ok' ? 'on' : ''}" data-action="mark" data-s="ok" ${attrs} aria-pressed="${st === 'ok'}" aria-label="Conforme: ${esc(i.it.text)}"></button>
         <button class="rd nok ${st === 'nok' ? 'on' : ''}" data-action="mark" data-s="nok" ${attrs} aria-pressed="${st === 'nok'}" aria-label="No conforme: ${esc(i.it.text)}"></button>
         ${st === 'nok' ? `<div class="full obs-row"><input type="text" class="obs-in ${bad ? 'invalid' : ''}" data-obs-input ${attrs} value="${esc(i.ans.o)}" placeholder="Observación" aria-label="Observación">
-          <label class="photo-btn" title="Adjuntar foto" aria-label="Adjuntar foto">${CAMERA}<input type="file" accept="image/*" hidden data-photo-input ${attrs}></label>
+          <label class="photo-btn" title="Adjuntar foto" aria-label="Adjuntar foto">${CAMERA}<input type="file" accept="image/*" capture="environment" hidden data-photo-input ${attrs}></label>
           ${thumbsHTML(i.ans.p, n => `data-action="rm-photo" ${attrs} data-i="${n}"`)}</div>
         <div class="full obs-row"><input type="text" class="obs-in" data-corr-input ${attrs} value="${esc(i.ans.c || '')}" placeholder="Acción correctiva (inmediata)" aria-label="Acción correctiva"></div>` : ''}`;
     }).join('')}</div></div>`;
@@ -925,7 +925,7 @@ function openReport() {
       <b>${esc(a.name)}</b><small>${bossName(a.bossId) ? 'Jefe/a: ' + esc(bossName(a.bossId)) : 'Sin jefe asignado'}</small></button>`).join('');
   modal({
     title: 'Generar informe semanal', wide: true,
-    body: `<div class="rep-pick"><div><p class="muted">1. Elige la sala:</p><div class="rep-areas" id="repAreas">${areaBtns()}</div></div>
+    body: `<p class="hint rep-tip">Al imprimir, en la ventana del navegador desmarca <b>“Encabezados y pies de página”</b>. Así no sale el enlace de la página al final.</p><div class="rep-pick"><div><p class="muted">1. Elige la sala:</p><div class="rep-areas" id="repAreas">${areaBtns()}</div></div>
       <label class="field"><span>2. Semana (cualquier día de esa semana)</span><input type="date" id="repRef" value="${ref}"></label></div>
       <div id="reportPreview" class="rep-preview"></div>`,
     buttons: [{ label: 'Cerrar' }, {
@@ -1868,6 +1868,29 @@ async function boot() {
   render();
   syncPending().catch(() => {});
 }
+/* Actualización en vivo: lo que guardan otros equipos aparece sin recargar. */
+let headSig = '';
+async function liveRefresh() {
+  if (document.visibilityState !== 'visible' || !authRole || !window.sb) return;
+  const view = location.hash.replace('#/', '');
+  if (headMode) {
+    try {
+      const list = await SupabaseRead.audits();
+      const sig = JSON.stringify(list.map(a => [a.id, a.updatedAt, a.done]));
+      await refreshConformities();
+      if (sig !== headSig) { headSig = sig; db.audits = list; if (view === 'historial' || view === 'resumen') render(true); }
+    } catch (e) { /* sin red: se intenta en el próximo ciclo */ }
+    return;
+  }
+  if (authRole === 'monitora' || authRole === 'administrador') {
+    const r = await pullCloudAudits(false);
+    if (r && r.changed && (view === 'historial' || view === 'resumen')) render(true);
+  }
+  if (view === 'historial') await refreshConformities();
+}
+setInterval(() => liveRefresh().catch(() => {}), 30000);
+window.addEventListener('focus', () => liveRefresh().catch(() => {}));
+
 boot();
 
 })();
