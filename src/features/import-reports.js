@@ -6,7 +6,7 @@
      parseReport(parrafos) -> { areaName, week, rows:[{ type, sub, pct, prev }] }
      weekStart(year, week) -> lunes ISO de esa semana
      asAudits(db)          -> auditorías "virtuales" (no se guardan) para Resumen e informe
-   Lo importado vive en db.imported y no se sube a la nube.
+   Se guarda en la nube (src/data/supabase-reports.js); db.imported es una copia local de esa lista.
    ===================================================================== */
 (function () {
   'use strict';

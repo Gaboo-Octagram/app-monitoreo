@@ -103,3 +103,9 @@ Actualizado: 28-10-2026. Estado actual: versión 2 funcionando, con datos guarda
 
 ## Fase 8 — Usuarios desde Configuración
 Pestaña Usuarios (solo administrador) + Edge Function `admin-users` + cambio de contraseña propio. Ver `docs/usuarios-admin.md`.
+
+## Fase 12 — Cámara, vista en vivo, impresión y dirección corta
+- Foto en "No conforme": el botón abre la cámara directo en celular y tablet (`capture="environment"`).
+- Actualización en vivo: cada 30 segundos (y al volver a la ventana) se traen las auditorías y conformidades de la nube. Monitora y administrador bajan lo guardado por otros equipos; la jefa también.
+- Informe: aviso para desmarcar "Encabezados y pies de página" al imprimir (lo pone el navegador, no la página).
+- Dirección: el proyecto en Cloudflare pasa a llamarse `control-calidad`. Nueva dirección: `https://control-calidad.<subdominio>.workers.dev`. Después de publicar, eliminar el proyecto `app-monitoreo` en Cloudflare y avisar a la monitora el enlace nuevo.
