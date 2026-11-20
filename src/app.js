@@ -311,7 +311,8 @@ function blockCardHTML(m, x, p) {
         <button class="rd ok ${st === 'ok' ? 'on' : ''}" data-action="mark" data-s="ok" ${attrs} aria-pressed="${st === 'ok'}" aria-label="Conforme: ${esc(i.it.text)}"></button>
         <button class="rd nok ${st === 'nok' ? 'on' : ''}" data-action="mark" data-s="nok" ${attrs} aria-pressed="${st === 'nok'}" aria-label="No conforme: ${esc(i.it.text)}"></button>
         ${st === 'nok' ? `<div class="full obs-row"><input type="text" class="obs-in ${bad ? 'invalid' : ''}" data-obs-input ${attrs} value="${esc(i.ans.o)}" placeholder="Observación" aria-label="Observación">
-          <label class="photo-btn" title="Adjuntar foto" aria-label="Adjuntar foto">${CAMERA}<input type="file" accept="image/*" capture="environment" hidden data-photo-input ${attrs}></label>
+          <label class="photo-btn" title="Tomar foto con la cámara" aria-label="Tomar foto con la cámara">${CAMERA}<input type="file" accept="image/*" capture="environment" hidden data-photo-input ${attrs}></label>
+          <label class="photo-btn photo-alt" title="Elegir foto guardada" aria-label="Elegir foto guardada">Galería<input type="file" accept="image/*" hidden data-photo-input ${attrs}></label>
           ${thumbsHTML(i.ans.p, n => `data-action="rm-photo" ${attrs} data-i="${n}"`)}</div>
         <div class="full obs-row"><input type="text" class="obs-in" data-corr-input ${attrs} value="${esc(i.ans.c || '')}" placeholder="Acción correctiva (inmediata)" aria-label="Acción correctiva"></div>` : ''}`;
     }).join('')}</div></div>`;
@@ -1671,9 +1672,10 @@ function flushOnExit() {
   saveDrafts();
 }
 window.addEventListener('pagehide', flushOnExit);
+setInterval(() => { if (document.visibilityState === 'visible' && authRole) pullCloudAudits(); }, 120000);
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') flushOnExit();
-  else if (authRole === 'monitora' || authRole === 'administrador') pullCloudAudits();
+  else if (authRole) pullCloudAudits();
 });
 
 /* ---------- Reintento hacia la nube ----------
@@ -1849,9 +1851,7 @@ window.addEventListener('sc-auth', () => {
   else if (headMode) location.reload();   // vuelve a cargar los datos locales de este navegador
   else if (role) {
     refreshConformities();
-    if (role === 'monitora' || role === 'administrador') {
-      adoptCloudCatalog().finally(() => pullCloudAudits(true).then(() => syncPending().catch(() => {})));
-    }
+    adoptCloudCatalog().finally(() => pullCloudAudits(true).then(() => syncPending().catch(() => {})));
   }
 });
 
