@@ -1,5 +1,5 @@
 {
-  "name": "app-monitoreo",
+  "name": "control-calidad",
   "compatibility_date": "2026-11-01",
   "assets": { "directory": "./src" }
 }
