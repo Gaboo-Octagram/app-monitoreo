@@ -64,6 +64,9 @@ function fakeCloud() {
   check('Teja Food: Limpieza Cuarto Frio 95% (anterior 100%)', g(t, 'limpieza', 'Cuarto Frio').pct === 95 && g(t, 'limpieza', 'Cuarto Frio').prev === 100);
   check('Teja Food: Termosellado sin dos puntos también se lee', g(t, 'limpieza', 'Cuarto Termosellado').pct === 100);
   check('Supermercado: Limpieza 96% y Orden 100% sin sub-área', s.areaName === 'Supermercado' && s.rows.length === 2 && g(s, 'limpieza', '').pct === 96 && g(s, 'orden', '').pct === 100);
+  const dupDoc = ['Informe Sala Orden Semana 19', 'Limpieza', 'Semana 19: 95%', 'Semana anterior: 90%', 'Limpieza', 'Semana 19: 95%', 'Orden', 'Semana 19: 100%'];
+  const dd = I.parseReport(dupDoc);
+  check('Word con valores repetidos: queda una fila por categoría y se avisa', dd.rows.length === 2 && dd.dups === 1);
   check('Semana → lunes ISO (S41 2026 = 2026-10-05)', I.weekStart(2026, 41) === '2026-10-05');
   const real = '/mnt/user-data/attachments/c1f8f38a-166c-56b8-af1f-56acdce146ca/975fe065-Informe_Sala_Supermercado_Semana_41.docx';
   if (fs.existsSync(real)) {

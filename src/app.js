@@ -1180,6 +1180,7 @@ function importReview(items) {
         <label class="field"><span>Semana</span><input type="number" min="1" max="53" data-imp-f="week" value="${it.week || ''}"></label>
         <label class="field"><span>Año</span><input type="number" min="2000" max="2100" data-imp-f="year" value="${it.year}"></label>
       </div>
+      ${it.warning ? `<p class="hint" style="color:var(--warn,#f5c451)">${esc(it.warning)}</p>` : ''}
       ${!it.areaId ? `<p class="hint">No encontré el área "${esc(it.areaName)}" en tu catálogo. Elígela para poder guardar.</p>` : ''}
       ${real ? `<p class="hint">Ojo: esa semana ya tiene auditorías reales de esta área; los valores se mezclarían con los importados.</p>` : ''}
       <table class="tbl imp-tbl"><thead><tr><th>Categoría</th><th>Sub-área</th><th>% semana</th></tr></thead><tbody>${it.rows.map((r, j) => `<tr data-r="${j}"><td>${esc(IMP_CAT[r.type])}</td><td>${subOptions(area, r.sub)}</td><td><input type="number" min="0" max="100" data-imp-f="pct" value="${r.pct}"> %</td></tr>`).join('')}</tbody></table>`}
@@ -1230,6 +1231,7 @@ async function handleImport(list) {
       if (!it.error) {
         const rep = SCImport.parseReport(await SCImport.readDocx(await file.arrayBuffer()));
         it.areaName = rep.areaName; it.week = rep.week; it.rows = rep.rows;
+        if (rep.dups) it.warning = `Se omitieron ${rep.dups} valor${rep.dups === 1 ? '' : 'es'} repetido${rep.dups === 1 ? '' : 's'} (misma categoría y sub-área). Revisa que los porcentajes coincidan con el Word.`;
         if (!rep.rows.length) it.error = 'No encontré porcentajes en este archivo. ¿Es un informe semanal con "Semana N: 95%"?';
       }
     } catch (e) { it.error = e.message || 'No se pudo leer el archivo. Debe ser un Word (.docx).'; }

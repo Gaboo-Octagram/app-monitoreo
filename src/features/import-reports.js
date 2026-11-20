@@ -73,6 +73,10 @@
       if (/^variacion/.test(n) || /^informe\s/.test(n) || /^semana/.test(n)) continue;
       if (cat && line.length <= 40) { sub = line.replace(/:\s*$/, '').trim(); cur = null; }
     }
+    // Una sola fila por categoría y sub-área: si el Word repite una, se queda la primera.
+    const seen = new Set(); let dups = 0;
+    out.rows = out.rows.filter(r => { const k = r.type + '|' + (r.sub || ''); if (seen.has(k)) { dups++; return false; } seen.add(k); return true; });
+    out.dups = dups;
     return out;
   }
 
