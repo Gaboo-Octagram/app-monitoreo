@@ -29,7 +29,7 @@
     if (/JWT expired|invalid jwt|jwt malformed|expected 3 parts in jwt|not authenticated|invalid claim/i.test(raw)) {
       text = 'La sesión no es válida o caducó. Cierra sesión y vuelve a entrar.';
     } else if (/permission denied|row-level security|violates row-level|insufficient privilege/i.test(raw)) {
-      text = 'Tu cuenta no tiene permiso para leer estos datos.';
+      text = 'Tu cuenta no tiene permiso' + (table ? ` en la tabla ${table}` : '') + '. Detalle: ' + raw.slice(0, 180);
     } else if (/failed to fetch|networkerror|load failed|network request failed|fetch failed/i.test(raw)) {
       text = 'No hay conexión con la nube. Revisa internet e inténtalo de nuevo.';
     } else if (/does not exist|schema cache|could not find the table/i.test(raw)) {
