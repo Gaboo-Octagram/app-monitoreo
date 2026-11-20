@@ -1683,20 +1683,26 @@ document.addEventListener('visibilitychange', () => {
    No bloquea nada: si sigue sin poder, se reintenta más adelante. */
 const pendingSync = () => db.audits.filter(a => !a.cloudSyncedAt && !a.cloudSkipped);
 
+const SYNC_REASON = {
+  'sin-cliente': 'No hay conexión con la base de datos. Recarga la página.',
+  'sin-sesion': 'La sesión venció. Vuelve a entrar y luego sube los pendientes.',
+  'sin-perfil': 'Tu usuario no está activo o no existe en el sistema.',
+  'sin-local': 'Tu usuario no tiene local asignado.',
+};
 async function syncPending(limit = 5) {
-  if (!window.SupabaseWrite || headMode) return { synced: 0, pending: 0 };
-  let synced = 0;
+  if (!window.SupabaseWrite || headMode) return { synced: 0, pending: pendingSync().length, reason: 'Esta cuenta no sube auditorías desde este equipo.' };
+  let synced = 0, reason = '';
   for (const aud of pendingSync().slice(-limit)) {
     let r;
     try { r = await SupabaseWrite.saveAudit(aud, db); }
-    catch (e) { break; }
-    if (r && r.skipped === 'conflicto') { await pullCloudAudits(true); try { r = await SupabaseWrite.saveAudit(aud, db); } catch (e) { break; } }
+    catch (e) { reason = `${aud.date}: ${(e && e.message) || 'error desconocido al subir'}`; break; }
+    if (r && r.skipped === 'conflicto') { await pullCloudAudits(true); try { r = await SupabaseWrite.saveAudit(aud, db); } catch (e) { reason = `${aud.date}: ${(e && e.message) || 'error al subir'}`; break; } }
     if (r && r.ok) { aud.cloudId = r.auditId; aud.cloudUpdatedAt = r.updatedAt || aud.cloudUpdatedAt; aud.cloudSyncedAt = new Date().toISOString(); delete aud.cloudSkipped; synced++; }
     else if (r && ['enviada', 'rol', 'sin-local'].includes(r.skipped)) aud.cloudSkipped = r.skipped;
-    else break;
+    else { reason = SYNC_REASON[r && r.skipped] || `${aud.date}: no se pudo subir (${(r && r.skipped) || 'motivo desconocido'}).`; break; }
   }
   if (synced) { try { await AppData.saveDB(db); } catch (e) { /* queda en memoria */ } }
-  return { synced, pending: pendingSync().length };
+  return { synced, pending: pendingSync().length, reason };
 }
 
 window.SCSync = { pending: syncPending, count: () => pendingSync().length };

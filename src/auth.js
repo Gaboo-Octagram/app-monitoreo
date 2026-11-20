@@ -355,7 +355,7 @@
           (left ? ` Quedan ${left} pendientes.` : ' Todo al día.'), 'ok');
       } else {
         cloudMessage(left
-          ? `No se pudo subir. Quedan ${left} pendientes: revisa la conexión o vuelve a entrar.`
+          ? `No se pudo subir. Quedan ${left} pendientes. ${r.reason || 'Revisa la conexión.'}`
           : 'No había nada pendiente.', left ? 'bad' : '');
       }
       btn.hidden = !left;
