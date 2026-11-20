@@ -486,3 +486,19 @@ td select[data-change="user-role"]{min-width:170px}
 .imp-top .field:first-child{flex:1 1 200px}
 .imp-top input{width:90px}
 .imp-tbl input[type=number]{width:70px}
+
+/* Informes semanales: subida por área, filtros y lista área > año > semana */
+.imp-upload{margin-bottom:12px}
+.imp-upload .imp-top{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap}
+.imp-upload .imp-top .field{min-width:240px}
+.imp-filters{display:flex;gap:10px;flex-wrap:wrap;margin:14px 0 10px}
+.imp-filters input[type=search]{flex:1 1 280px;min-width:220px;padding:9px 10px;border-radius:8px;border:1px solid var(--border-2,#2a3f66);background:var(--surface-2,#0f1d36);color:inherit;font:inherit}
+.imp-filters select{flex:0 1 200px;padding:9px 10px;border-radius:8px;border:1px solid var(--border-2,#2a3f66);background:var(--surface-2,#0f1d36);color:inherit;font:inherit}
+.imp-area{margin-bottom:10px;padding:10px 14px}
+.imp-area>summary{cursor:pointer;padding:4px 0}
+.imp-year{margin:8px 0 0 12px}
+.imp-year>summary{cursor:pointer;font-weight:600;padding:4px 0}
+.imp-weeks{list-style:none;margin:6px 0 4px;padding:0}
+.imp-weeks li{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 0;border-bottom:1px solid var(--border,#1c2c4a)}
+.imp-weeks li:last-child{border-bottom:none}
+.imp-acts{display:flex;gap:6px}

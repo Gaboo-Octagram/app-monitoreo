@@ -103,3 +103,10 @@ Actualizado: 28-10-2026. Estado actual: versión 2 funcionando, con datos guarda
 
 ## Fase 8 — Usuarios desde Configuración
 Pestaña Usuarios (solo administrador) + Edge Function `admin-users` + cambio de contraseña propio. Ver `docs/usuarios-admin.md`.
+
+## Fase 11 — Informes semanales en la nube
+- Configuración → Archivos → "Informes semanales anteriores (Word)": el administrador elige el área, sube los .docx (hasta 10 MB) y revisa la lectura antes de guardar.
+- Los archivos quedan en Storage (`weekly-reports`), ordenados por área, año y semana, con buscador y filtros.
+- Los porcentajes se guardan en `weekly_reports` y `weekly_report_values` y alimentan el Resumen y el informe semanal, desde cualquier equipo.
+- Migración nueva en Supabase: `docs/migraciones/005-informes-semanales.sql` (después de 001 a 004). Pruebas: `tests/importar.test.js` y `tests/schema/migracion-005.test.mjs`.
+- Límite de 10 MB por informe: ajustable en el bucket `weekly-reports` cuando haga falta.
