@@ -78,7 +78,10 @@
       file_name: file.name, file_path: path, file_size: file.size });
     if (ie) { await client.storage.from(BUCKET).remove([path]); throw friendly(ie, 'weekly_reports'); }
 
-    const vals = info.rows.map(r => ({ report_id: id, store_id: store, type: r.type, sub: r.sub || '', pct: r.pct }));
+    // Una fila por categoría y sub-área (la base lo exige): se omiten repeticiones.
+    const uniq = new Map();
+    info.rows.forEach(r => { const k = r.type + '|' + (r.sub || ''); if (!uniq.has(k)) uniq.set(k, r); });
+    const vals = [...uniq.values()].map(r => ({ report_id: id, store_id: store, type: r.type, sub: r.sub || '', pct: r.pct }));
     if (vals.length) {
       const { error: ve } = await client.from('weekly_report_values').insert(vals);
       if (ve) { await client.from('weekly_reports').delete().eq('id', id); await client.storage.from(BUCKET).remove([path]); throw friendly(ve, 'weekly_report_values'); }
