@@ -1095,14 +1095,70 @@ function cfgParams() {
 }
 
 const IMP_CAT = { trabajadores: 'Presentación Personal', limpieza: 'Limpieza', orden: 'Orden' };
+let impState = { uploadArea: '', q: '', area: '', year: '', loading: false, error: '' };
+const canWriteReports = () => !headMode && authRole === 'administrador';
+
+/* Trae los informes desde Supabase (si hay sesión) y reemplaza la copia del navegador. */
+async function refreshImported(silent) {
+  if (!window.SupabaseReports || !authRole || headMode) return;
+  impState.loading = true; impState.error = '';
+  try { const list = await SupabaseReports.list(); if (list) db.imported = list; }
+  catch (e) { impState.error = e.message || String(e); }
+  finally { impState.loading = false; }
+  if (!silent) render(true);
+}
+
+function impListHTML() {
+  const all = db.imported || [];
+  const q = SCImport.norm(impState.q);
+  const list = all.filter(im =>
+    (!impState.area || im.areaId === impState.area) &&
+    (!impState.year || String(im.year) === impState.year) &&
+    (!q || SCImport.norm(`${im.fileName || ''} ${im.areaName} semana ${im.week} ${im.year}`).includes(q)));
+  if (!list.length) return `<p class="muted">${all.length ? 'Ningún informe coincide con la búsqueda.' : 'Aún no hay informes subidos.'}</p>`;
+  const areas = [...new Set(list.map(x => x.areaName))].sort((x, y) => x.localeCompare(y));
+  return areas.map(an => {
+    const items = list.filter(x => x.areaName === an);
+    const years = [...new Set(items.map(x => x.year))].sort((x, y) => y - x);
+    return `<details class="imp-area" open><summary><b>${esc(an)}</b> <span class="muted">${items.length} ${plural(items.length, 'informe', 'informes')}</span></summary>
+      ${years.map(y => {
+        const ws = items.filter(x => x.year === y).sort((x, z) => z.week - x.week);
+        return `<details class="imp-year" open><summary>${y} <span class="muted">${ws.length} ${plural(ws.length, 'semana', 'semanas')}</span></summary>
+          <ul class="imp-weeks">${ws.map(im => `<li><span><b>Semana ${im.week}</b> · <span class="muted">${esc(im.fileName || 'sin archivo')}${im.fileSize ? ' · ' + fmtSize(im.fileSize) : ''}</span></span>
+            <span class="imp-acts">${im.filePath ? `<button class="btn sm" data-action="dl-import" data-id="${im.id}">Descargar</button>` : ''}${canWriteReports() ? ` <button class="btn sm ghost" data-action="del-import" data-id="${im.id}">Eliminar</button>` : ''}</span></li>`).join('')}</ul>
+        </details>`;
+      }).join('')}
+    </details>`;
+  }).join('');
+}
+
 function cfgImported() {
-  const list = (db.imported || []).slice().sort((a, b) => b.start.localeCompare(a.start) || a.areaName.localeCompare(b.areaName));
-  return sectionHead('Informes semanales importados (solo porcentajes)') +
-    `<div class="dropzone"><p style="margin-bottom:10px">Sube los informes Word de semanas anteriores (por ejemplo "Informe Sala Teja Food Semana 41"). Se leen solo los porcentajes de cada categoría y sub-área; después podrás revisarlos antes de guardar. Sirven para el Resumen y para el informe semanal. Quedan en este navegador y no se suben a la nube.</p>
-      <label class="btn primary" style="cursor:pointer">Importar informes (Word)<input type="file" id="reportImportInput" accept=".docx" multiple hidden></label></div>` +
-    tableWrap(['Semana', 'Área', 'Valores', ''], list.map(im => `<tr><td><b>Semana ${im.week}</b> <span class="muted">· ${im.year}</span></td><td>${esc(im.areaName)}</td>
-      <td class="muted">${im.rows.map(r => `${IMP_CAT[r.type]}${r.sub ? ' ' + esc(r.sub) : ''}: ${r.pct}%`).join(' · ')}</td>
-      <td class="actions"><button class="btn sm ghost" data-action="del-import" data-id="${im.id}">Eliminar</button></td></tr>`), 'Aún no hay informes importados.');
+  const canW = canWriteReports();
+  const areaOpts = (sel) => db.areas.map(a => `<option value="${a.id}" ${a.id === sel ? 'selected' : ''}>${esc(a.name)}</option>`).join('');
+  const years = [...new Set((db.imported || []).map(x => x.year))].sort((x, y) => y - x);
+  const upload = !window.SupabaseReports ? '' : !authRole ? `<p class="hint">Para subir informes necesitas iniciar sesión: se guardan en la nube para que se vean desde cualquier equipo.</p>` : !canW ? '' : `
+    <div class="dropzone imp-upload">
+      <p style="margin-bottom:10px">Primero elige el área y luego sube sus informes Word (.docx), de una o varias semanas. Se guardan en la nube y de cada uno se toman los porcentajes para el Resumen y el informe semanal. Máximo 10 MB por archivo.</p>
+      <div class="imp-top">
+        <label class="field"><span>Área</span><select data-change="imp-area"><option value="">— elegir —</option>${areaOpts(impState.uploadArea)}</select></label>
+        <button class="btn primary" data-action="imp-pick" ${impState.uploadArea ? '' : 'disabled'}>Seleccionar archivos Word</button>
+        <input type="file" id="reportImportInput" accept=".docx" multiple hidden>
+      </div></div>`;
+  const status = impState.loading ? `<p class="hint">Cargando informes desde la nube…</p>` : impState.error ? `<p class="hint" style="color:var(--bad,#ff8a8a)">${esc(impState.error)}</p>` : '';
+  return sectionHead('Informes semanales anteriores (Word)') + upload + status + `
+    <div class="imp-filters">
+      <input type="search" id="impSearch" placeholder="Buscar por área, semana, año o nombre de archivo" value="${esc(impState.q)}" aria-label="Buscar informes">
+      <select data-change="imp-filter-area" aria-label="Filtrar por área"><option value="">Todas las áreas</option>${areaOpts(impState.area)}</select>
+      <select data-change="imp-filter-year" aria-label="Filtrar por año"><option value="">Todos los años</option>${years.map(y => `<option value="${y}" ${String(y) === impState.year ? 'selected' : ''}>${y}</option>`).join('')}</select>
+    </div>
+    <div id="impList">${impListHTML()}</div>`;
+}
+function cfgFiles() {
+  return cfgImported() + '<div style="margin-top:28px"></div>' + sectionHead('Otros archivos de apoyo') +
+    `<div class="dropzone"><p style="margin-bottom:10px">Sube otros archivos (PDF, Excel, imágenes). Máximo 1,5 MB por archivo. Los informes semanales van arriba.</p>
+      <label class="btn primary" style="cursor:pointer">Seleccionar archivos<input type="file" id="fileInput" multiple hidden></label></div>` +
+    tableWrap(['Archivo', 'Tamaño', 'Subido', ''], files.map(f => `<tr><td><strong>${esc(f.name)}</strong></td><td>${fmtSize(f.size)}</td><td>${fmtDate(f.date)}</td>
+      <td class="actions"><button class="btn sm" data-action="dl-file" data-id="${f.id}">Descargar</button> <button class="btn sm ghost" data-action="del-file" data-id="${f.id}">Eliminar</button></td></tr>`), 'Todavía no hay archivos guardados.');
 }
 
 function importReview(items) {
@@ -1133,20 +1189,22 @@ function importReview(items) {
   modal({
     title: 'Revisar informes a importar', wide: true, body: body(items),
     buttons: [{ label: 'Cancelar' }, {
-      label: 'Guardar importación', cls: 'primary', onClick: async () => {
+      label: 'Subir informes', cls: 'primary', onClick: async () => {
         const ok = readOK(items);
         if (!ok.length) { toast('No hay informes listos: elige el área y revisa la semana.', 'error'); return false; }
         if (ok.some(x => x.rows.some(r => !(r.pct >= 0 && r.pct <= 100)))) { toast('Hay porcentajes fuera de 0 a 100.', 'error'); return false; }
-        db.imported = db.imported || [];
-        ok.forEach(x => {
-          const a = db.areas.find(y => y.id === x.areaId);
-          db.imported = db.imported.filter(im => !(im.areaId === x.areaId && im.year === x.year && im.week === x.week));
-          db.imported.push({ id: uid(), year: x.year, week: x.week, start: SCImport.weekStart(x.year, x.week), areaId: a.id, areaName: a.name,
-            rows: x.rows.map(r => ({ type: r.type, sub: r.sub, pct: r.pct })), importedAt: new Date().toISOString() });
-        });
-        if (!await save()) return false;
+        let n = 0;
+        for (const x of ok) {
+          try {
+            await SupabaseReports.save(x.file, { areaId: x.areaId, year: x.year, week: x.week, start: SCImport.weekStart(x.year, x.week),
+              rows: x.rows.map(r => ({ type: r.type, sub: r.sub || '', pct: r.pct })) });
+            n++;
+          } catch (e) { toast(`${x.name}: ${e.message || e}`, 'error'); }
+        }
+        await refreshImported(true);
         render(true);
-        toast(`${ok.length} ${plural(ok.length, 'informe importado', 'informes importados')}.`);
+        if (!n) return false;
+        toast(`${n} ${plural(n, 'informe subido', 'informes subidos')}.`);
       }
     }],
     onOpen: m => {
@@ -1163,28 +1221,25 @@ function importReview(items) {
   });
 }
 async function handleImport(list) {
-  const items = [], yearNow = new Date().getFullYear();
+  const items = [], yearNow = new Date().getFullYear(), preset = impState.uploadArea;
   for (const file of [...list]) {
-    const it = { name: file.name, areaName: '', areaId: '', week: 0, year: yearNow, rows: [], error: '' };
+    const it = { name: file.name, file, areaName: '', areaId: '', week: 0, year: yearNow, rows: [], error: '' };
+    if (file.size > SupabaseReports.MAX) it.error = `Supera 10 MB (${fmtSize(file.size)}). No se puede subir.`;
     try {
-      const rep = SCImport.parseReport(await SCImport.readDocx(await file.arrayBuffer()));
-      it.areaName = rep.areaName; it.week = rep.week; it.rows = rep.rows;
-      const a = db.areas.find(x => SCImport.norm(x.name) === SCImport.norm(rep.areaName)) || db.areas.find(x => { const a = SCImport.norm(x.name), b = SCImport.norm(rep.areaName); return a && b && (a.includes(b) || b.includes(a)); });
-      if (a) { it.areaId = a.id; it.rows.forEach(r => { const mt = a.subs.find(x => SCImport.norm(x.name) === SCImport.norm(r.sub)); if (mt) r.sub = mt.name; }); }
-      if (!rep.rows.length) it.error = 'No encontré porcentajes en este archivo. ¿Es un informe semanal con "Semana N: 95%"?';
+      if (!it.error) {
+        const rep = SCImport.parseReport(await SCImport.readDocx(await file.arrayBuffer()));
+        it.areaName = rep.areaName; it.week = rep.week; it.rows = rep.rows;
+        if (!rep.rows.length) it.error = 'No encontré porcentajes en este archivo. ¿Es un informe semanal con "Semana N: 95%"?';
+      }
     } catch (e) { it.error = e.message || 'No se pudo leer el archivo. Debe ser un Word (.docx).'; }
+    const a = preset ? db.areas.find(x => x.id === preset)
+      : db.areas.find(x => SCImport.norm(x.name) === SCImport.norm(it.areaName)) || db.areas.find(x => { const p1 = SCImport.norm(x.name), p2 = SCImport.norm(it.areaName); return p1 && p2 && (p1.includes(p2) || p2.includes(p1)); });
+    if (a) { it.areaId = a.id; it.rows.forEach(r => { const mt = a.subs.find(x => SCImport.norm(x.name) === SCImport.norm(r.sub)); if (mt) r.sub = mt.name; }); }
     items.push(it);
   }
   if (items.length) importReview(items);
 }
 
-function cfgFiles() {
-  return cfgImported() + sectionHead('Archivos e informes anteriores') +
-    `<div class="dropzone"><p style="margin-bottom:10px">Sube informes previos (PDF, Word, Excel, imágenes). Máximo 1,5 MB por archivo.</p>
-      <label class="btn primary" style="cursor:pointer">Seleccionar archivos<input type="file" id="fileInput" multiple hidden></label></div>` +
-    tableWrap(['Archivo', 'Tamaño', 'Subido', ''], files.map(f => `<tr><td><strong>${esc(f.name)}</strong></td><td>${fmtSize(f.size)}</td><td>${fmtDate(f.date)}</td>
-      <td class="actions"><button class="btn sm" data-action="dl-file" data-id="${f.id}">Descargar</button> <button class="btn sm ghost" data-action="del-file" data-id="${f.id}">Eliminar</button></td></tr>`), 'Todavía no hay archivos guardados.');
-}
 function handleFiles(list) {
   const MAX = 1.5 * 1024 * 1024;
   [...list].forEach(file => {
@@ -1384,11 +1439,22 @@ document.addEventListener('click', async e => {
     case 'report': openReport(); break;
     case 'logo-clear': db.settings.reportLogo = ''; await save(); render(true); break;
     /* Configuración */
-    case 'del-import':
-      if (await confirmBox('¿Eliminar este informe importado? Dejará de verse en el Resumen y en el informe semanal.', 'Eliminar', true)) { db.imported = (db.imported || []).filter(im => im.id !== id); await save(); render(true); }
+    case 'imp-pick': document.getElementById('reportImportInput')?.click(); break;
+    case 'dl-import': {
+      const im = (db.imported || []).find(x => x.id === id);
+      if (im && im.filePath) { try { await SupabaseReports.download(im.filePath, im.fileName); } catch (e) { toast(e.message || String(e), 'error'); } }
       break;
+    }
+    case 'del-import': {
+      const im = (db.imported || []).find(x => x.id === id);
+      if (!im) break;
+      if (!await confirmBox(`¿Eliminar el informe de la semana ${im.week} de ${im.areaName}? Se borra el archivo y sus porcentajes, también en la nube.`, 'Eliminar', true)) break;
+      try { await SupabaseReports.remove(im.id, im.filePath); } catch (e) { toast(e.message || String(e), 'error'); break; }
+      await refreshImported(true); render(true); toast('Informe eliminado.');
+      break;
+    }
     case 'audit-today': ui.auditDate = ''; render(true); break;
-    case 'cfg-tab': ui.cfgTab = el.dataset.tab; if (ui.cfgTab === 'users') ui.users.list = null; render(true); break;
+    case 'cfg-tab': ui.cfgTab = el.dataset.tab; if (ui.cfgTab === 'users') ui.users.list = null; render(true); if (ui.cfgTab === 'files') refreshImported(false); break;
     case 'reload-users': ui.users.list = null; render(true); break;
     case 'add-user':
       formModal({
@@ -1533,8 +1599,14 @@ document.addEventListener('input', e => {
     if (c) { c.c = t.value; markDrafts(); }
   }
 });
+document.addEventListener('input', e => {
+  if (e.target && e.target.id === 'impSearch') { impState.q = e.target.value; const l = $('#impList'); if (l) l.innerHTML = impListHTML(); }
+});
 document.addEventListener('change', async e => {
   const t = e.target, c = t.dataset && t.dataset.change;
+  if (c === 'imp-area') { impState.uploadArea = t.value; render(true); return; }
+  if (c === 'imp-filter-area') { impState.area = t.value; $('#impList').innerHTML = impListHTML(); return; }
+  if (c === 'imp-filter-year') { impState.year = t.value; $('#impList').innerHTML = impListHTML(); return; }
   if (c === 'audit-date') { ui.auditDate = t.value && t.value <= todayISO() ? t.value : ''; render(true); return; }
   if (c === 'user-role') {
     const x = (ui.users.list || []).find(y => y.id === t.dataset.id);
@@ -1772,6 +1844,7 @@ window.addEventListener('sc-auth', () => {
   const role = window.SCAuth ? SCAuth.role() : null;
   if (role === authRole) return;
   authRole = role;
+  if (role) refreshImported(true);
   if (role === HEAD_ROLE) enterHeadMode();
   else if (headMode) location.reload();   // vuelve a cargar los datos locales de este navegador
   else if (role) {
