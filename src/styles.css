@@ -343,11 +343,15 @@ tr.invalid td{box-shadow:none;background:var(--nok-soft)}
   body{background:#fff}
   body>*:not(#printArea){display:none!important}
   #printArea{display:block}
-  #printArea .report{padding:0;border-radius:0}
+  #printArea .report{padding:0 14mm;border-radius:0}
+  /* Margen 0 en la hoja: así el navegador no imprime su encabezado/pie (URL, fecha).
+     El margen superior e inferior se da con espacios que se repiten en cada página. */
+  #printArea .wr>thead>tr>td{padding-top:14mm}
+  #printArea .wr>tfoot>tr>td{padding-bottom:14mm}
   #printArea .wr{max-width:none}
   #printArea .wr>thead{display:table-header-group}#printArea .wr>tfoot{display:table-footer-group}
   .wr-svg,.wr-levels td,.wr-head{-webkit-print-color-adjust:exact;print-color-adjust:exact}
-  @page{margin:14mm}
+  @page{size:auto;margin:0}
 }
 
 /* Acceso (src/auth.js) */
@@ -486,3 +490,5 @@ td select[data-change="user-role"]{min-width:170px}
 .imp-top .field:first-child{flex:1 1 200px}
 .imp-top input{width:90px}
 .imp-tbl input[type=number]{width:70px}
+
+.photo-alt{width:auto;min-width:30px;padding:0 10px;font-size:12px}
