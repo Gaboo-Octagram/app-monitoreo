@@ -1726,6 +1726,7 @@ let lastPull = 0, pulling = false;
 const hasUrlPhotos = a => a.areas.some(r => !r.notEvaluated && (r.blocks || []).some(b => b.entries.some(e => (e.photos || []).some(p => /^https?:/.test(p)))));
 
 async function pullCloudAudits(force) {
+  if (force) for (let i = 0; pulling && i < 100; i++) await new Promise(r => setTimeout(r, 100));
   if (headMode || pulling || !window.SupabaseRead || !window.sb) return { changed: false };
   if (!force && Date.now() - lastPull < 60000) return { changed: false };
   pulling = true;
