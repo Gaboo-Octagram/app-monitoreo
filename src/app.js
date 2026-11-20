@@ -1672,7 +1672,6 @@ function flushOnExit() {
   saveDrafts();
 }
 window.addEventListener('pagehide', flushOnExit);
-setInterval(() => { if (document.visibilityState === 'visible' && authRole) pullCloudAudits(); }, 120000);
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') flushOnExit();
   else if (authRole) pullCloudAudits();
@@ -1882,10 +1881,8 @@ async function liveRefresh() {
     } catch (e) { /* sin red: se intenta en el próximo ciclo */ }
     return;
   }
-  if (authRole === 'monitora' || authRole === 'administrador') {
-    const r = await pullCloudAudits(false);
-    if (r && r.changed && (view === 'historial' || view === 'resumen')) render(true);
-  }
+  const r = await pullCloudAudits(false);   // todas las cuentas, cada 30 s mientras la página está visible
+  if (r && r.changed && (view === 'historial' || view === 'resumen')) render(true);
   if (view === 'historial') await refreshConformities();
 }
 setInterval(() => liveRefresh().catch(() => {}), 30000);
