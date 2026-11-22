@@ -100,11 +100,11 @@ input::placeholder,textarea::placeholder{color:#5a6788}
 .bhead h4{font-size:13px;font-weight:600}
 .pctbox{text-align:center;border:1px solid var(--border-2);border-radius:8px;padding:3px 10px;font-size:10px;letter-spacing:.06em;color:var(--muted);background:var(--surface);min-width:70px}
 .pctbox b{display:block;font-size:14px;letter-spacing:0}
-.cgrid{display:grid;grid-template-columns:1fr 30px 30px;align-items:center;gap:6px 8px}
+.cgrid{display:grid;grid-template-columns:1fr 30px 30px;align-items:center;gap:2px 8px}
 .cgrid .ch{font-size:11px;letter-spacing:.06em;color:var(--muted);text-transform:uppercase;padding-bottom:4px;border-bottom:1px solid var(--border)}
 .cgrid .ch.c{text-align:center;font-size:13px}
 .cgrid .ch.c.ok{color:var(--ok)} .cgrid .ch.c.nok{color:var(--nok)}
-.crow-name{padding:5px 0}
+.crow-name{padding:2px 0}
 .cgrid .full{grid-column:1/-1}
 .rd{width:22px;height:22px;border-radius:50%;border:2px solid;background:transparent;cursor:pointer;padding:0;display:grid;place-items:center;justify-self:center;font-size:12px;font-weight:700;line-height:1}
 .rd.ok{border-color:rgba(34,197,139,.5)} .rd.nok{border-color:rgba(240,84,93,.5)} .rd.na{border-color:rgba(135,147,178,.5)}
