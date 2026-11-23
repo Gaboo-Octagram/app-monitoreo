@@ -1726,6 +1726,8 @@ if (window.sb && sb.auth && sb.auth.onAuthStateChange) {
    - día que ya no existe en la nube (p. ej. borrado total) → se quita de aquí. */
 let lastPull = 0, pulling = false;
 const hasUrlPhotos = a => a.areas.some(r => !r.notEvaluated && (r.blocks || []).some(b => b.entries.some(e => (e.photos || []).some(p => /^https?:/.test(p)))));
+const hasDataPhotos = a => a.areas.some(r => !r.notEvaluated && (r.blocks || []).some(b => b.entries.some(e => (e.photos || []).some(p => /^data:/.test(p)))));
+const photoCount = a => a.areas.reduce((n, r) => n + (r.notEvaluated ? 0 : (r.blocks || []).reduce((m, b) => m + b.entries.reduce((k, e) => k + (e.photos || []).length, 0), 0)), 0);
 
 async function pullCloudAudits(force) {
   if (force) for (let i = 0; pulling && i < 100; i++) await new Promise(r => setTimeout(r, 100));
@@ -1741,7 +1743,10 @@ async function pullCloudAudits(force) {
       if (!l) { db.audits.push(c); changed = true; return; }
       const dirty = !l.cloudSyncedAt, newer = !l.cloudUpdatedAt || c.updatedAt > l.cloudUpdatedAt;
       if (!dirty) {
-        if (newer || hasUrlPhotos(l)) { Object.assign(l, c, { id: l.id }); changed = true; }
+        /* Las fotos locales (base64) se cambian por las de la nube solo si la nube tiene todas:
+           misma cantidad. Así se libera espacio del navegador sin perder ninguna foto. */
+        const photosInCloud = hasDataPhotos(l) && photoCount(c) >= photoCount(l) && photoCount(l) > 0;
+        if (newer || hasUrlPhotos(l) || photosInCloud) { Object.assign(l, c, { id: l.id }); changed = true; }
       } else if (newer) {
         const byId = new Map(l.areas.map(r => [r.areaId, r]));
         const merged = c.areas.map(ca => byId.has(ca.areaId) ? mergeResult(ca, byId.get(ca.areaId)) : ca);
