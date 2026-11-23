@@ -1,9 +1,9 @@
 # Sistema de Calidad — Control de Auditorías e Inspecciones
 
-App web vanilla (HTML/CSS/JS) para control de auditorías e inspecciones en supermercados. Datos guardados en localStorage en la versión actual (v2). En futuras fases se migrará a Supabase con autenticación, roles y permisos.
+App web vanilla (HTML/CSS/JS) para control de auditorías e inspecciones en supermercados. Acceso con usuario y contraseña de Supabase, con roles (administrador, jefa de calidad, monitora). Las auditorías se guardan en el navegador y se suben a Supabase.
 
 ## Características (v2)
-- Acceso opcional con cuenta de Supabase; se puede trabajar sin conexión
+- Acceso obligatorio con usuario y contraseña de Supabase; la app abre solo con sesión iniciada
 - Auditorías por área con checks de Limpieza/Orden y evaluación de trabajadores
 - Validación obligatoria de observación/foto en "No conforme"
 - Borradores por área con guardado diferido (se agrupan y se escriben al cerrar)
