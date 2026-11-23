@@ -2,7 +2,7 @@
    Acceso con Supabase (correo y contraseña)
    ---------------------------------------------------------------------
    Capa independiente de la app: no lee ni escribe auditorías.
-   - Muestra una pantalla de acceso al abrir, con opción "Seguir sin conexión".
+   - Muestra una pantalla de acceso al abrir. Sin sesión no se entra a la app.
    - Si hay sesión, muestra el nombre y el rol en la barra superior.
    - El botón de la barra abre "Mi cuenta" (datos y cerrar sesión).
 
@@ -17,7 +17,6 @@
     monitora: 'Monitora de calidad',
     jefa_calidad: 'Jefa de calidad'
   };
-  const SKIP_KEY = 'sc_login_omitido';
 
   let session = null;
   let profile = null;
@@ -151,10 +150,8 @@
             <button class="btn primary big" id="loginSubmit" type="submit" ${hasClient ? '' : 'disabled'}>Entrar</button>
           </form>
 
-          <button class="btn ghost login-skip" id="loginSkip" type="button">Seguir sin conexión</button>
           <p class="login-note">
-            Tus auditorías siguen guardadas <strong>solo en este navegador</strong>.
-            La cuenta se usará cuando conectemos los datos a la nube.
+            Entra con la cuenta que te entregó el administrador.
           </p>
         </div>
       </div>`);
@@ -162,7 +159,6 @@
     document.body.appendChild(overlay);
 
     const form = overlay.querySelector('#loginForm');
-    const skip = overlay.querySelector('#loginSkip');
 
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -179,7 +175,6 @@
         const { data, error } = await client.auth.signInWithPassword({ email, password });
         if (error) { setLoginError(friendly(error.message)); setBusy(false); return; }
         session = data.session;
-        sessionStorage.removeItem(SKIP_KEY);
         await loadProfile();
         setBusy(false);
         closeLogin();
@@ -190,16 +185,11 @@
       }
     });
 
-    skip.addEventListener('click', () => {
-      sessionStorage.setItem(SKIP_KEY, '1');
-      closeLogin();
-    });
-
     if (hasClient) {
       const emailInput = overlay.querySelector('#loginEmail');
       if (emailInput) emailInput.focus();
     } else {
-      setLoginError('No se pudo cargar la conexión con Supabase. Puedes seguir sin conexión.');
+      setLoginError('No se pudo cargar la conexión con Supabase. Revisa internet y recarga la página.');
     }
 
     if (message) setLoginError(message);
@@ -214,10 +204,7 @@
     if (!session) { openLogin(); return; }
     closeAccount();
 
-    const role = profile ? (ROLES[profile.role] || profile.role) : 'Sin perfil';
     const name = (profile && profile.full_name) || '—';
-    const store = profile && profile.stores ? profile.stores.name
-      : (profile && profile.store_id ? 'Local asignado' : 'Sin local asignado');
 
     modal = h(`
       <div class="overlay" id="accountOverlay">
@@ -228,13 +215,7 @@
           </div>
           <div class="modal-body">
             <div class="account-row"><span>Nombre</span><strong>${esc(name)}</strong></div>
-            <div class="account-row"><span>Rol</span><strong>${esc(role)}</strong></div>
-            <div class="account-row"><span>Local</span><strong>${esc(store)}</strong></div>
             <div class="account-row"><span>Usuario</span><strong>${esc(userLabel())}</strong></div>
-            <p class="account-note">
-              Por ahora la app sigue usando los datos de este navegador. Los permisos
-              por rol se aplicarán cuando conectemos las auditorías a Supabase.
-            </p>
 
             <form class="pw-box" id="pwForm" novalidate>
               <strong>Cambiar mi contraseña</strong>
@@ -277,7 +258,6 @@
       try { await sb().auth.signOut(); } catch (err) { console.warn(err); }
       session = null;
       profile = null;
-      sessionStorage.removeItem(SKIP_KEY);
       closeAccount();
       renderChip();
       openLogin();
@@ -405,7 +385,7 @@
 
     const client = sb();
     if (!client) {
-      openLogin('No se pudo cargar la conexión con Supabase. Puedes seguir sin conexión.');
+      openLogin('No se pudo cargar la conexión con Supabase. Revisa internet y recarga la página.');
       return;
     }
 
@@ -415,12 +395,12 @@
       if (session) {
         await loadProfile();
         renderChip();
-      } else if (!sessionStorage.getItem(SKIP_KEY)) {
+      } else {
         openLogin();
       }
     } catch (e) {
       console.warn('No se pudo comprobar la sesión:', e);
-      openLogin('No se pudo comprobar la sesión. Puedes seguir sin conexión.');
+      openLogin('No se pudo comprobar la sesión. Revisa internet y recarga la página.');
     }
 
     // Si la sesión se cierra desde otra pestaña o caduca.
