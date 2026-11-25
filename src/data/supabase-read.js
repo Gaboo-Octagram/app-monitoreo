@@ -207,7 +207,8 @@
 
     const urls = new Map();
     if (paths.length) {
-      const { data: signed } = await client.storage.from('audit-photos').createSignedUrls(paths, 3600);
+      const { data: signed, error: signErr } = await client.storage.from('audit-photos').createSignedUrls(paths, 3600);
+      if (signErr) console.warn('No se pudieron generar los enlaces de fotos:', signErr.message || signErr);
       (signed || []).forEach(x => { if (x && x.signedUrl && x.path) urls.set(x.path, x.signedUrl); });
     }
 
