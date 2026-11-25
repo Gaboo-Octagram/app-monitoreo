@@ -932,8 +932,7 @@ function openReport() {
     buttons: [{ label: 'Cerrar' }, {
       label: 'Imprimir / Guardar PDF', cls: 'primary', onClick: () => {
         if (!areaId) { toast('No hay áreas configuradas.', 'error'); return false; }
-        $('#printArea').innerHTML = weeklyHTML(areaId, ref);
-        window.print();
+        printReportWithPhotos(areaId, ref);
         return false;
       }
     }],
@@ -947,6 +946,22 @@ function openReport() {
       draw();
     }
   });
+}
+/* Antes de imprimir: renueva los enlaces de las fotos (vencen a la hora) y espera a que carguen. */
+async function printReportWithPhotos(areaId, ref) {
+  if (window.SupabaseRead && window.sb) {
+    try { await pullCloudAudits(true); } catch (e) { console.warn('No se pudieron renovar las fotos:', e); }
+  }
+  $('#printArea').innerHTML = weeklyHTML(areaId, ref);
+  const pending = [...$('#printArea').querySelectorAll('img')].filter(img => /^https?:/.test(img.src) && !img.complete);
+  if (pending.length) {
+    await Promise.all(pending.map(img => new Promise(res => {
+      img.addEventListener('load', res, { once: true });
+      img.addEventListener('error', res, { once: true });
+      setTimeout(res, 8000);
+    })));
+  }
+  window.print();
 }
 window.addEventListener('afterprint', () => { $('#printArea').innerHTML = ''; });
 
