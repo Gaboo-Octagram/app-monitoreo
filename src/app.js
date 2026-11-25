@@ -1743,6 +1743,9 @@ async function pullCloudAudits(force) {
       if (!l) { db.audits.push(c); changed = true; return; }
       const dirty = !l.cloudSyncedAt, newer = !l.cloudUpdatedAt || c.updatedAt > l.cloudUpdatedAt;
       if (!dirty) {
+        /* Si la nube devuelve menos fotos de las que hay aquí (p. ej. fallaron los enlaces),
+           no se reemplaza la copia local: las fotos no se pierden por una lectura incompleta. */
+        if (photoCount(c) < photoCount(l)) { console.warn('Fotos incompletas en la nube para', l.date); return; }
         /* Las fotos locales (base64) se cambian por las de la nube solo si la nube tiene todas:
            misma cantidad. Así se libera espacio del navegador sin perder ninguna foto. */
         const photosInCloud = hasDataPhotos(l) && photoCount(c) >= photoCount(l) && photoCount(l) > 0;
