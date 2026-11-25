@@ -1749,7 +1749,9 @@ async function pullCloudAudits(force) {
         /* Las fotos locales (base64) se cambian por las de la nube solo si la nube tiene todas:
            misma cantidad. Así se libera espacio del navegador sin perder ninguna foto. */
         const photosInCloud = hasDataPhotos(l) && photoCount(c) >= photoCount(l) && photoCount(l) > 0;
-        if (newer || hasUrlPhotos(l) || photosInCloud) { Object.assign(l, c, { id: l.id }); changed = true; }
+        /* La nube tiene más fotos que esta copia (p. ej. se perdieron aquí): se recuperan. */
+        const photosMissingHere = photoCount(c) > photoCount(l);
+        if (newer || hasUrlPhotos(l) || photosInCloud || photosMissingHere) { Object.assign(l, c, { id: l.id }); changed = true; }
       } else if (newer) {
         const byId = new Map(l.areas.map(r => [r.areaId, r]));
         const merged = c.areas.map(ca => byId.has(ca.areaId) ? mergeResult(ca, byId.get(ca.areaId)) : ca);
